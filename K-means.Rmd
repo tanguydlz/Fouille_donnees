@@ -1,0 +1,176 @@
+---
+title: "Clustering"
+author: "Amélie Picard"
+date: "09/01/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# K-means
+
+Nous allons essayer, avec la méthode des k-means de detecter des fraudes. L'algorithme des k-means est une méthode d'apprentissage non supérivisé, en fait elle a pour but de créer un certain nombre de groupes selon les données d'entrée. 
+
+Le principe du k-means est de prendre aléatoirement le nombre de barycentres que classe à prédire. Puis de regrouper chaque individus selon le barycentre le plus proche puis les recalculer pour recommencer l'expérience jusqu'à que les barycentre ne change plus de valeurs, et que les individus ne change plus de groupe. En théorie, il se peut que d'attendre ce moment pour arrêter le modèle peut créer du sur-apprentissage, donc il faut être vigilents.
+
+Dans notre cas, nous n'avons pas a sélectionner le nombre de classe qui différencie nos individus. Nous souhaitons deux groupes qui determinera les individus qui ont fraudé ou non. Le but sera de trouver une méthode qui définisse bien ces deux groupes selon les données pour une bonne prédiction.
+
+```{r}
+#library
+library(factoextra)
+library(ggplot)
+library(cluster)
+```
+
+
+```{r}
+#chargement des données 
+load(file = "Xtrain.Rdata")
+load(file = "ytrain.Rdata")
+load(file = "Xtest.Rdata")
+load(file = "ytest.Rdata")
+
+```
+
+Réalisation d'un K-means avec deux classes à prédire, sur les données d'entreinement normalisé.
+
+```{r}
+#K-means de 2 groupes :
+groupes.kmeans <- kmeans(scale(Xtrain),centers=2)
+
+```
+
+Visualisation : 
+fviz_cluster() --> visualisation des données sur les dim 1 et 2 d'une ACP.
+
+```{r}
+library(factoextra)
+fviz_cluster(groupes.kmeans, Xtrain,
+   palette = "Set2", ggtheme = theme_minimal())
+
+```
+
+
+Interprétation selon les variables utilisation d'une ACP pour réduire le nombre de dimension à analyser: 
+
+Le but de cette méthode est d'obtenir des classes représentant les deux valeurs de y. Pour vérifier cela et pouvoir analyser les différences nous allons observer la distribution des variables classe et y.
+
+Table de la fréquence des individus selon leurs valeurs de y et des classes prédites :
+
+```{r}
+#groupe selon la variable y
+grp.y<-table(ytrain,groupes.kmeans$cluster)
+grp.y<-data.frame(rbind(grp.y))
+
+grp.y.freq<-grp.y
+for (i in 1:length(grp.y[,1])) {
+  grp.y.freq[i,]<-prop.table(grp.y[i,])
+}
+grp.y.freq
+```
+
+Nous pouvons voir que dans le 
+
+Nous allons maintenant réaliser une ACP (Analyse en Composante Principale) pour analyser réduir le nombre de dimension et pour analyser les individus faisant partir du groupe représentant majoritairement les fraudes et non fraude.
+
+```{r}
+# Réduction de dimension en utilisant l'ACP
+res.pca <- prcomp(Xtrain,  scale = TRUE)
+# Coordonnées des individus
+ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord)
+# Ajouter les clusters obtenus à l'aide de l'algorithme k-means
+ind.coord$cluster <- factor(groupes.kmeans$cluster)
+# Ajouter les groupes d'espèces issues du jeu de données initial
+ind.coord$y <- ytrain
+# Inspection des données
+head(ind.coord)
+```
+
+Nous allons regarder la variance expliquée par les dimensions. Ce qui signifie le pourcentage d'informations retranscrit sur chaque dimensions.
+
+```{r}
+# Pourcentage de la variance expliquée par les dimensions
+eigenvalue <- round(get_eigenvalue(res.pca), 1)
+variance.percent <- eigenvalue$variance.percent
+head(eigenvalue)
+```
+
+La première dimension comprend `r eigenvalue[1,2]`% et la deuxième dimension comprend  `r eigenvalue[1,2]`% d'informations.
+
+Représenation graphique des individus coloré selon les classes crée par les k-means, les points ont une forme différentes selon sa valeur de y (0 ou 1). Avec y de l'échantillon d'apprentissage.
+
+```{r}
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2", 
+  color = "cluster", palette = "npg", ellipse = TRUE, ellipse.type = "convex",
+  shape = "Species", size = 1.5,  legend = "right", ggtheme = theme_bw(),
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+) +
+  stat_mean(aes(color = cluster), size = 4)
+```
+
+# PAM
+
+Maintenant nous allons essayer une autre méthode PAM (Partitioning Around Medoids), qui est une méthode de clustering semblable aux k-means, mais plus robuste et moins sensible. La méthode est similaire au k-means, il s'agit d'une méthode de k-medoides. La différence entre ces deux méthodes et que les k-means utilise la moyenne alors que les k-medoides des medoid qui le rendent plus robuste, prenant moins en compte les valeurs extrèmes.
+
+Il est possible d'utiliser metric = "euclidean" ou "manhattan". stand=FALSE car les données ne sont pas normalisé
+
+```{r}
+
+groupes.pam<-pam(XTrain, 2, metric = "euclidean", stand = FALSE)
+
+```
+
+Commes les deux méthodes sont similiare on les analyse de la même manière.
+
+Visualisation : 
+fviz_cluster() --> visualisation des données sur les dim 1 et 2 d'une ACP.
+
+```{r}
+fviz_cluster(groupes.pam, Xtrain,
+   palette = "Set2", ggtheme = theme_minimal())
+
+```
+
+
+Interprétation selon les variables utilisation d'une ACP pour réduire le nombre de dimension à analyser: 
+
+Le but de cette méthode est d'obtenir des classes représentant les deux valeurs de y. Pour vérifier cela et pouvoir analyser les différences nous allons observer la distribution des variables classe et y.
+
+Table de la fréquence des individus selon leurs valeurs de y et des classes prédites :
+
+```{r}
+#groupe selon la variable y
+grp.y<-table(ytrain,groupes.pam$cluster)
+grp.y<-data.frame(rbind(grp.y))
+
+grp.y.freq<-grp.y
+for (i in 1:length(grp.y[,1])) {
+  grp.y.freq[i,]<-prop.table(grp.y[i,])
+}
+grp.y.freq
+```
+
+Nous pouvons voir que dans le 
+
+Nous allons maintenant utiliser l'ACP (Analyse en Composante Principale) réalisé précédeament pour analyser les résultats.
+
+Nous allons regarder la variance expliquée par les dimensions. Ce qui signifie le pourcentage d'informations retranscrit sur chaque dimensions.
+
+Représenation graphique des individus coloré selon les classes crée par les k-means, les points ont une forme différentes selon sa valeur de y (0 ou 1). Avec y de l'échantillon d'apprentissage.
+
+
+```{r}
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2", 
+  color = "cluster", palette = "npg", ellipse = TRUE, ellipse.type = "convex",
+  shape = "y", size = 1.5,  legend = "right", ggtheme = theme_bw(),
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+) +
+  stat_mean(aes(color = groupes.kmeans$cluster), size = 4)
+```
+

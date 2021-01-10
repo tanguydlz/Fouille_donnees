@@ -1,12 +1,11 @@
 #setwd("C:/Users/Axelle/Desktop/M/03_SISE/06_FOUILLE DE DONNEES MASSIVES/PROJET")
-
+setwd("C:/Users/ameli/Downloads")
 #importation des donnÃ©es
 datas = read.table("dataproject.txt", sep = ";", header = TRUE)
 #target = datas$FlAgImpAye
 #features = datas[,-23]
 summary(datas)
 str(datas)
-
 ##########Preprocessing
 #Remplacer les "," par des "."
 datas$MontAnt = sub(",", ".", datas$MontAnt) 
@@ -61,3 +60,6 @@ datas$VerifiAnceCPT3 = round(datas$VerifiAnceCPT3, 2)
 datas$CodeDecision = as.factor(datas$CodeDecision)
 datas$FlAgImpAye = as.factor(datas$FlAgImpAye)
 
+#Nvelle données sans les variables non utilisée
+new_data<-datas[,c(-1,-2,-5,-22)]
+datasuppr<-datas[,c(1,2,5,22)]
