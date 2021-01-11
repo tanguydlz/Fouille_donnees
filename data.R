@@ -1,4 +1,4 @@
-setwd("D:/Téléchargements/M2/fouille de données")
+setwd("D:/TÃ©lÃ©chargements/M2/fouille de donnÃ©es")
 
 library(e1071)
 library(dplyr)
@@ -24,7 +24,7 @@ library(ROSE)
 Xytrain = cbind(Xtrain,ytrain)
 table(Xytrain$ytrain)
 
-#métohde over et under sampling
+#mÃ©tohde over et under sampling
 Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
 table(Xytrain2$ytrain)
 
@@ -34,7 +34,7 @@ ytrain2 = Xytrain2[,18]
 model2 <- svm(Xtrain2, ytrain2, scale=T, type= "C-classification",kernel='linear')
 summary(model2)
 
-#Prédiction sur les données test
+#PrÃ©diction sur les donnÃ©es test
 pred2 = predict(model2, newdata = Xtest)
 #Matrice de confusion
 cm = table(pred2, ytest); cm
@@ -43,22 +43,22 @@ err2 = (cm[1,2] + cm[2,1])/sum(cm); err2
 
 roc.curve(ytest, pred2)
 
-#méthode ROSE
-#Les données générées par le suréchantillonnage ont prévu une quantité d'observations répétées. 
-#Les données générées par le sous-échantillonnage sont privées d'informations importantes par rapport aux données d'origine. 
-#Ce qui entraîne des inexactitudes dans les performances résultantes. Pour faire face à ces problèmes, ROSE nous aide à générer des données de manière synthétique également. 
-#Les données générées par ROSE sont considérées comme fournissant une meilleure estimation des données originales.
+#mÃ©thode ROSE
+#Les donnÃ©es gÃ©nÃ©rÃ©es par le surÃ©chantillonnage ont prÃ©vu une quantitÃ© d'observations rÃ©pÃ©tÃ©es. 
+#Les donnÃ©es gÃ©nÃ©rÃ©es par le sous-Ã©chantillonnage sont privÃ©es d'informations importantes par rapport aux donnÃ©es d'origine. 
+#Ce qui entraÃ©ne des inexactitudes dans les performances rÃ©sultantes. Pour faire face Ã© ces problÃ©mes, ROSE nous aide Ã© gÃ©nÃ©rer des donnÃ©es de maniÃ©re synthÃ©tique Ã©galement. 
+#Les donnÃ©es gÃ©nÃ©rÃ©es par ROSE sont considÃ©rÃ©es comme fournissant une meilleure estimation des donnÃ©es originales.
 
 
 Xytrain3 <- ROSE(ytrain ~ ., data = Xytrain, seed = 1)$data
 table(Xytrain3$ytrain)
 
-#Cet ensemble nous fournit également des méthodes pour vérifier l'exactitude du modèle en utilisant la méthode de bagging et holdout.
-#Cela nous permet de nous assurer que nos prévisions résultantes ne souffrent pas d'une variance élevée.
+#Cet ensemble nous fournit Ã©galement des mÃ©thodes pour vÃ©rifier l'exactitude du modÃ©le en utilisant la mÃ©thode de bagging et holdout.
+#Cela nous permet de nous assurer que nos prÃ©visions rÃ©sultantes ne souffrent pas d'une variance Ã©levÃ©e.
 ROSE.holdout <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "holdout", extr.pred = function(obj)obj, seed = 1)
 ROSE.holdout
 
-#Nous constatons que notre précision se maintient à ~ 0,89 et montre que nos prévisions ne souffrent pas d'une variance élevée.
+#Nous constatons que notre prÃ©cision se maintient Ã© ~ 0,89 et montre que nos prÃ©visions ne souffrent pas d'une variance Ã©levÃ©e.
 
 #leave-K-out cross validation trop long
 # ROSE.cv <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "LKOCV", extr.pred = function(obj)obj, seed = 1)
@@ -70,7 +70,7 @@ ytrain = Xytrain3[,18]
 model <- svm(Xtrain, ytrain, scale=T, type= "C-classification",kernel='linear')
 summary(model)
 
-#Prédiction sur les données test
+#PrÃ©diction sur les donnÃ©es test
 pred = predict(model, newdata = Xtest)
 #Matrice de confusion
 cm = table(pred, ytest); cm
@@ -79,6 +79,6 @@ err = (cm[1,2] + cm[2,1])/sum(cm); err
 
 roc.curve(ytest, pred)
 
-#bien meilleur avec méthode rose que Combined under/over
+#bien meilleur avec mÃ©thode rose que Combined under/over
 
 
