@@ -1,11 +1,27 @@
+---
+title: "svm + ech ROSA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
 setwd("D:/Téléchargements/M2/fouille de données")
 
 library(e1071)
 library(dplyr)
 library(caTools)
+library(ROSE)
+library(caret)
 
 set.seed(123)
+```
 
+
+```{r}
 load(file = "Xtrain.Rdata")
 load(file = "ytrain.Rdata")
 load(file = "Xtest.Rdata")
@@ -19,18 +35,24 @@ ytrain = ytrain[ech]
 Xtest = Xtest[ech2,]
 ytest = ytest[ech2]
 
-library(ROSE)
-
 Xytrain = cbind(Xtrain,ytrain)
 table(Xytrain$ytrain)
+```
 
-#métohde over et under sampling
+méthode over et under sampling combiné avec le package ROSE
+
+```{r}
 Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
 table(Xytrain2$ytrain)
 
 Xtrain2 = Xytrain2[,1:17]
 ytrain2 = Xytrain2[,18]
+```
 
+
+SVM avec cette méthode
+
+```{r}
 model2 <- svm(Xtrain2, ytrain2, scale=T, type= "C-classification",kernel='linear')
 summary(model2)
 
@@ -42,35 +64,52 @@ cm = table(pred2, ytest); cm
 err2 = (cm[1,2] + cm[2,1])/sum(cm); err2
 
 roc.curve(ytest, pred2)
-
-#méthode ROSE
-#Les données générées par le suréchantillonnage ont prévu une quantité d'observations répétées. 
-#Les données générées par le sous-échantillonnage sont privées d'informations importantes par rapport aux données d'origine. 
-#Ce qui entraéne des inexactitudes dans les performances résultantes. Pour faire face é ces problémes, ROSE nous aide é générer des données de maniére synthétique également. 
-#Les données générées par ROSE sont considérées comme fournissant une meilleure estimation des données originales.
+```
 
 
+méthode ROSE du package
+Les données générées par le suréchantillonnage ont prévu une quantité d'observations répétées. 
+Les données générées par le sous-échantillonnage sont privées d'informations importantes par rapport aux données d'origine. 
+Ce qui entraéne des inexactitudes dans les performances résultantes. Pour faire face à ces problémes, ROSE nous aide à générer des données de maniére synthétique également. 
+Les données générées par ROSE sont considérées comme fournissant une meilleure estimation des données originales.
+
+```{r}
 Xytrain3 <- ROSE(ytrain ~ ., data = Xytrain, seed = 1)$data
 table(Xytrain3$ytrain)
+```
 
-#Cet ensemble nous fournit également des méthodes pour vérifier l'exactitude du modéle en utilisant la méthode de bagging et holdout.
-#Cela nous permet de nous assurer que nos prévisions résultantes ne souffrent pas d'une variance élevée.
+Cet ensemble nous fournit également des méthodes pour vérifier l'exactitude du modéle en utilisant la méthode de bagging et holdout.
+
+Cela nous permet de nous assurer que nos prévisions résultantes ne souffrent pas d'une variance élevée.
+
+```{r}
 ROSE.holdout <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "holdout", extr.pred = function(obj)obj, seed = 1)
 ROSE.holdout
+```
 
-#Nous constatons que notre précision se maintient à ~ 0,89 et montre que nos prévisions ne souffrent pas d'une variance élevée.
+Nous constatons que notre précision se maintient à ~ 0,89 et montre que nos prévisions ne souffrent pas d'une variance élevée.
 
+```{r}
 #leave-K-out cross validation trop long
 # ROSE.cv <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "LKOCV", extr.pred = function(obj)obj, seed = 1)
 # ROSE.cv
+```
 
+```{r}
 Xtrain = Xytrain3[,1:17]
 ytrain = Xytrain3[,18]
+```
 
+
+
+SVM avec la méthode d'échantillonage ROSE
+```{r}
 ##########Kernel linéaire
 model <- svm(Xtrain, ytrain, scale=T, type= "C-classification",kernel='linear')
 summary(model)
+```
 
+```{r}
 #Prédiction sur les données test
 pred = predict(model, newdata = Xtest)
 #Matrice de confusion
@@ -79,11 +118,23 @@ cm = table(pred, ytest); cm
 err = (cm[1,2] + cm[2,1])/sum(cm); err
 
 roc.curve(ytest, pred)
+```
 
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')
+print(cf)
+```
+
+bien meilleur avec méthode rose que Combined under/over
+
+```{r}
 ########Kernel radial
 model_rad <- svm(Xtrain, ytrain, scale=T, type= "C-classification",kernel='radial')
 summary(model_rad)
+```
 
+```{r}
 #Prédiction sur les données test
 pred = predict(model_rad, newdata = Xtest)
 #Matrice de confusion
@@ -92,7 +143,12 @@ cm = table(pred, ytest); cm
 err = (cm[1,2] + cm[2,1])/sum(cm); err
 
 roc.curve(ytest, pred)
+```
 
-#bien meilleur avec méthode rose que Combined under/over
 
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(cf)
+```
 
