@@ -1,0 +1,172 @@
+---
+title: Classification dans un contexte déséquilibré Une application à la fraude bancaire
+  M2 SISE
+author: "Barou Axelle - Delzant Tanguy - Picard Amelie"
+date: "20/01/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Le but de ce projet est d'étudier des données issues d’une enseigne de la grande distribution ainsi que de certains organismes bancaires. Les données représentent des transactions effectuées par chèque  dans un magasin de l’enseigne quelque part en France.  
+La variable à prédire est la variable FlagImpaye, il s’agit d’une variable binaire qui peut prendre les valeurs suivantes : 0 la transaction est acceptée et considérée comme "normale", 1 la
+transaction est refusée car considérée comme "frauduleuse".
+
+# Travail préliminaire
+```{r include=FALSE}
+library(e1071)
+library(dplyr)
+library(caTools)
+library(ROSE)
+library(caret)
+library(adabag)
+library("imbalance")
+set.seed(123)
+```
+
+
+```{r include=FALSE}
+datas = read.table("dataproject.txt", sep = ";", header = TRUE)
+```
+
+```{r include=FALSE}
+load(file = "Fouille_donnees/Xtrain.Rdata")
+load(file = "Fouille_donnees/ytrain.Rdata")
+load(file = "Fouille_donnees/Xtest.Rdata")
+load(file = "Fouille_donnees/ytest.Rdata")
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.01))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+Xtrain=Xtrain[ech,]
+ytrain = ytrain[ech]
+
+Xtest = Xtest[ech2,]
+ytest = ytest[ech2]
+
+Xytrain = cbind(Xtrain,ytrain)
+```
+
+Le jeu de données est composé de 2 231 369 transactions et 23 variables. Lors du chargement des données, il a fallu effectué un travail d'hamonisation.
+```{r echo=FALSE}
+str(datas)
+```
+En effet, comme le montre le résultat précédent, certaines variables numériques sont de type chaîne de caratère. Nous avons donc commencé par remplacer les virgules par des points pour les variables numériques et nous les avons convertit en type "numéric". Nous avons ensuite arrondi les montant à deux décimales. Nous avons aussi recodé la variable d'intéret, FlAgImpAye, en variable de type facteur.  
+De plus, nous avons décidé de supprimer les variables que nous n'avons pas considéré pertinentes pour notre étude. Ainsi, la nouvelle structure des données avec les variables sélectionnées est la suivante:
+```{r echo=FALSE}
+str(Xytrain)
+```
+
+# Analyse synthétique et pre-processing
+Les données sur lesquelles nous travaillons sont dites déséquilibrées. En effet, le ratio des observations de la classe positive (opération frauduleuse) est très faible. Une approche naïve de classification qui ne prendrais pas en compte ce déséquilibre des classes et risquerais fortement de biaiser le modèle.
+```{r echo=FALSE}
+ggplot(data=Xytrain, aes(x=factor(ytrain), fill=as.factor(ytrain))) +
+  geom_bar(width = 0.7)+ 
+  ggtitle("Distribution des observations dans le jeu de données")+
+  ylab("Effective")+
+  xlab("Class")+
+  theme_minimal()
+```
+
+En effet, seulement 3% des observations sont frauduleuses, et donc appartiennent à la classe positive. Pour repérer ces opérations, nous aurions pu penser que les montants des opérations frauduleuses sont plus élevés que les autres  mais le graphique suivant montre que ce n'est pas le cas.
+
+```{r echo=FALSE}
+ggplot(Xytrain, aes(x=MontAnt, color=ytrain)) + 
+  geom_boxplot()
+```
+
+Nous allons donc procéder à un ré-échantillonnage pour tenter de résoudre le problème de désèquilibre. 
+Il existe plusieurs stratégies de ré-échantillonnage pour ajuster la distribution des classes d'un jeu de données: l'oversampling et l'undersampling.  
+L'oversampling consiste à générer de nouvelles observations de la classe minoritaire. L’algorithme le plus utilisé est SMOTE qui génére de nouvelles observations entre des individus de la
+plus petite classe.  
+L'undersampling consiste à ré-échantilloner la classe majoritaire de manière à obtenir un effectif
+proche de la classe minoritaire. L'idée est donc de supprimer les observations de la classe majoritaire.  
+Il est aussi possible de combiner ces deux approches. Nous avons donc choisi cette dernière options en ré-échantillonnant les données à l'aide de la fonction "ovun.sample" avec une probabilié de rééchantillonnage à partir de la classe minoritaire de 50%. Nous nous sommes donc retrouvé avec un jeu de données avec une répartition identique de la classe majoritaire et de la classe minoritaire. Le temps de calcul étant très long et les données très volumineuses, nous avons au préalable isolé les 2 000 000 premières lignes pour le jeu d'apprentissage et 231 370 lignes pour le jeu de test. Nous avons ensuite tiré aléatoirement 20000 lignes du jeu d'apprentissage et avons rééquilibré ce jeu de données de 20000 lignes.
+```{r echo=FALSE}
+Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
+Xtrain2 = Xytrain2[,1:17]
+ytrain2 = Xytrain2[,18]
+
+ggplot(data=Xytrain2, aes(x=factor(ytrain), fill=as.factor(ytrain))) +
+  geom_bar(width = 0.7)+
+  ggtitle("Distribution des observations dans le nouveau jeu de données")+
+  ylab("Effective")+
+  xlab("Class")+
+  theme_minimal()
+```
+
+Nous pouvons ensuite observer la génération de nouvelles données avec un graphique de comparaison.
+```{r echo=FALSE}
+plotComparison(Xytrain, Xytrain2, attrs = names(Xytrain)[c(5,17)], classAttr = "ytrain")
+```
+
+La première image montre les données initiales. On remarque beaucoup de données de la classe 0 et très peu de la classe 1. Dans la deuxième image, on peut voir que certaines données de la classe 0 ont été supprimées et que des données de la classe 1 ont été générées.  
+
+# Protocole expérimentale
+Pour résoudre ce problème de classification, nous allons tester plusieurs méthodes supervisés et non supervisés que nous allons entraîner sur le jeu d'apprentissage précédemment ré-échantilloné contenant 20000 données. Nous allons tenter d'optimiser chacune de nos méthodes puis nous sélectionnerons celle qui fonctionne le mieux sur notre jeu de test comportant les 23137 dernières données du jeu de données initial. Nous évaluerons les performances de nos modèles à l'aide de la F-mesure et de l'AUC.
+
+## La méthode Bagging
+Le bagging est une méthode générale pour ajuster plusieurs versions d'un modèle de prédiction, puis les combiner en une prédiction agrégée. L'idée est de faire coopérer plusieurs arbres. En effet, le bagging repose sur le fait que l'agrégation d'informations dans de grands groupes diversifiés aboutit souvent à des meilleurs décisions que celles qui auraient pu être prises par un seul membre du groupe.  
+Nous avons utilisé la fonction bagging du package adabag.  
+Nous avons d'abord tenté de faire un bagging avec les paramètres par défaut de la méthode bagging.
+Nous obtenons une F mesure de 0.019126 et une AUC de 0.669.
+```{r echo=FALSE}
+#Faisons un bagging avec les paramètres par defaut
+bag_1 = bagging(ytrain~., data = Xytrain2)
+#bag_1$trees[[1]]
+pred_bag1 = predict(bag_1, Xtest)
+cm_bag1 = confusionMatrix(as.factor(pred_bag1$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+#cm_bag1 #F1 = 0.019126
+roc.curve(ytest, pred_bag1$class) #AUC = 0.659
+```
+
+Nous avons donc essayé de créer des arbres plus profond en spécifiant quelques options. Nous définissons une profondeur maximale de 30 et un nombre d'arbre égal à 100. Nous obtenons alors une F-mesure de 0.0406977 mais un AUC de 0.543. L'AUC désigne la capacité à retrouvé la classe positive. Notre modèle détecte donc moins bien la classe positive que le précédent.
+```{r echo=FALSE}
+#Essayons d'autres parametres: arbre plus profond
+bag_2 = bagging(ytrain~., data = Xytrain2, mfinal=100, control = rpart.control(cp=0,maxdepth=30))
+pred_bag2 = predict(bag_2, Xtest)
+cm_bag2 = confusionMatrix(as.factor(pred_bag2$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+#cm_bag2 #F1 = 0.0406977
+roc.curve(ytest, pred_bag2$class) #AUC = 0.543
+#La F mesure est meilleure mais l'AUC est moins bon et fait comme l'aléatoire
+```
+
+Nous allons donc repartir sur le premier modèle et tenter de l'améliorer.
+En effet, nous remarquons que certaines variables ont une influence nulle sur notre modèle
+```{r echo=FALSE}
+importanceplot(bag_1,cex.names=0.5,horiz=TRUE)
+```
+
+Nous allons donc les supprimer du modèle et voir comment évoluent les performances
+```{r echo=FALSE}
+#On voit que les variables DiffDAteTr2,DiffDAteTr3,EcArtNumCheq,NbrMAgAsin3J,VerifiAnceCPT1,VerifiAnceCPT2
+#ont une influence nulle
+#on va donc les retirer du modele
+bag_3 = bagging(ytrain~D2CB+ScoringFP2+MontAnt+CA3TRetMtt+TAuxImpNB_CPM+VerifiAnceCPT3+ScoringFP1+CA3TR+TAuxImpNb_RB+ScoringFP3+DiffDAteTr1, data = Xytrain2)
+pred_bag3 = predict(bag_3, Xtest)
+cm_bag3 = confusionMatrix(as.factor(pred_bag3$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+#cm_bag3 #F1 = 0.015423
+roc.curve(ytest, pred_bag3$class) #AUC = 0.668
+#On a légérement une meilleur Fmesure et la même
+```
+La F-mesure étant de 0.015423 et l'AUC de 0.668, les performances n'ont pas été améliorées.  
+
+Nous allons donc tenter de combiner les deux premiers modèles. Pour cela, nous récupérons les votes de chaque arbres dans les deux modèles et nous attribuons la classe majoritaire. Nous obtenons alors une F-mesure de 0.0286689 se situant entre les 2 modèles et une AUC de 0.620.
+```{r echo=FALSE}
+#pred_bag1
+#pred_bag2
+p0 = pred_bag1$votes[,1]+pred_bag2$votes[,1]
+p1 = pred_bag1$votes[,2]+pred_bag2$votes[,2]
+p = cbind(p0, p1)
+classe = c()
+for (i in 1:dim(p)[1]) {
+  classe[i] = ifelse(p[i,1]>p[i,2], 0, 1)
+}
+roc.curve(ytest, classe)
+cm_bag_cl = confusionMatrix(as.factor(classe), as.factor(ytest), positive = "1", mode = "prec_recall")
+#cm_bag_cl #F1 = 0.0286689
+#AUC = 0.620
+```
+
+Ce modèle semble donc être un bon compromis entre la F-mesure et l'AUC issu des deux premiers modèles. Cependant, nous concluons que la méthode de bagging ne donne pas de très bon résultats sur notre jeu de données. Nous allons donc tenter d'autres modèles.
