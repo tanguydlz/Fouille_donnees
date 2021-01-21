@@ -276,9 +276,9 @@ table(XYtrain$ytrain)
 
 rm(ech,ech2)
 ```
-
-
-
+#####################################################################################
+################## Gradient boosting avec 50/50 mais vraies données
+#####################################################################################
 ```{r}
 xgb_Xtrain = xgb.DMatrix(as.matrix(Txy %>% select(-Tytrain)))
 xgb_ytrain = Txy$Tytrain
@@ -345,9 +345,9 @@ roc.curve(xgb_ytest, pred)
 cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
 print(round(cf*100,2))
 ```
-
+#####################################################################################
 ######### Test avec méthode d'échantillonage over/undersampling avec autant de classe minoritaire que majoritaire
-
+#####################################################################################
 ```{r}
 XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.5, seed=1)$data
 table(XYtrain$ytrain)
@@ -383,6 +383,92 @@ xgbGrid <- expand.grid(nrounds = c(100,200),
                       )
 ```
 
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+#####################################################################################
+######### Test avec méthode d'échantillonage over/undersampling avec un ratio de 75/25
+#####################################################################################
+
+```{r}
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.25))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+XYtrain=cbind(Xtrain[ech,],ytrain[ech])
+colnames(XYtrain)[18] = "ytrain"
+```
+
+
+```{r}
+XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.25, seed=1)$data
+table(XYtrain$ytrain)
+```
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(XYtrain %>% select(-ytrain)))
+xgb_ytrain = XYtrain$ytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+```{r}
+xgbGrid <- expand.grid(nrounds = 200,  
+                       max_depth = 20,
+                       colsample_bytree = 0.5,
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
 
 ```{r}
 xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
