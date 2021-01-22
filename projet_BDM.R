@@ -1,5 +1,5 @@
 #setwd("C:/Users/Axelle/Desktop/M/03_SISE/06_FOUILLE DE DONNEES MASSIVES/PROJET")
-setwd("C:/Users/ameli/Downloads")
+#setwd("C:/Users/ameli/Downloads")
 #importation des donnÃ©es
 datas = read.table("dataproject.txt", sep = ";", header = TRUE)
 #target = datas$FlAgImpAye
@@ -60,6 +60,14 @@ datas$VerifiAnceCPT3 = round(datas$VerifiAnceCPT3, 2)
 datas$CodeDecision = as.factor(datas$CodeDecision)
 datas$FlAgImpAye = as.factor(datas$FlAgImpAye)
 
-#Nvelle données sans les variables non utilisée
-new_data<-datas[,c(-1,-2,-5,-22)]
-datasuppr<-datas[,c(1,2,5,22)]
+#Nvelle donn?es sans les variables non utilis?e et save en Rdata des train et test pour importer plus rapidemment
+new_data<-datas[,c(-1,-2,-4,-5,-22)]
+Xtrain = new_data[1:2000000,-18]
+ytrain = new_data[1:2000000,18]
+Xtest = new_data[2000001:nrow(new_data),-18]
+ytest = new_data[2000001:nrow(new_data),18]
+
+save(Xtrain, file = "Xtrain.RData")
+save(ytrain, file = "ytrain.RData")
+save(Xtest, file = "Xtest.RData")
+save(ytest, file = "ytest.RData")
