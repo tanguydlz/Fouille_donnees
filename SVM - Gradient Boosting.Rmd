@@ -1,0 +1,519 @@
+---
+title: "svm + gradient boosting + ech ROSA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(e1071)
+library(dplyr)
+library(caTools)
+library(ROSE)
+library(caret)
+library(xgboost)
+
+set.seed(123)
+```
+
+
+```{r}
+load(file = "D:/Téléchargements/M2/fouille de données/Xtrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/Xtest.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytest.Rdata")
+
+TX= cbind(Xtrain,ytrain)
+TXtrain = TX[ytrain==1,]
+ech = sort(sample(nrow(TX), 5000))
+p = TX[ech,]
+TXtrain = rbind(TXtrain,p)
+Tytrain = TXtrain$ytrain ; TXtrain = TXtrain[,-18]
+
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.01))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+Xtrain=Xtrain[ech,]
+ytrain = ytrain[ech]
+
+Xtest = Xtest[ech2,]
+ytest = ytest[ech2]
+
+Xytrain = cbind(Xtrain,ytrain)
+table(Xytrain$ytrain)
+```
+######################################################
+########################### SVM ######################
+######################################################
+
+On commence par une méthode d'échantillonage qui combine l'oversampling ainsi que l'undersampling via le package ROSE pour rééquilibrer la classe minoritaire à 50%
+On ne prendra que 20.000 données étant donné qu'il est compliqué de traiter énormément de données avec des SVM de part la matrice que cela crée
+
+```{r}
+Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
+table(Xytrain2$ytrain)
+
+Xtrain2 = Xytrain2[,1:17]
+ytrain2 = Xytrain2[,18]
+```
+Nous utilisons le package ’e1071’ pour l’implémentation des SVM. Nous demandons à la procédure svm() de construire un classifieur dont on  centre les valeurs avec un noyau de type linéaire.
+
+On applique cette fonction à nos données d'apprentissage.
+
+
+```{r}
+model2 <- svm(Xtrain2, ytrain2, scale=T, type= "C-classification",kernel='linear')
+summary(model2)
+
+```
+
+```{r}
+#Prédiction sur les données test
+pred2 = predict(model2, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred2, ytest); cm
+#Taux d'erreur
+err2 = (cm[1,2] + cm[2,1])/sum(cm); err2
+
+roc.curve(ytest, pred2)
+```
+
+On observe un taux d'erreur de `r round(err2*100,2)`%, ce qui est globalement assez élevé.
+
+Cependant l'aire sous la courbe est de `r roc.curve(ytest, pred2)`, ce qui est assez bon pour un premier modèle simple.
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred2, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+La F mesure est de `r round(cf*100,2)`%, cette mesure est faible, on pourrait essayer de l'améliorer en tunant le modèle.
+
+Avant cela, nous allons essayer une autre technique d'échantillonage qui dont la fonction s'appelle ROSE du package du même nom.
+
+Méthode ROSE du package :
+
+Les données générées par le suréchantillonnage ont prévu une quantité d'observations répétées. 
+Les données générées par le sous-échantillonnage sont privées d'informations importantes par rapport aux données d'origine. 
+
+Ce qui entraine des inexactitudes dans les performances résultantes. Pour faire face à ces problémes, ROSE nous aide à générer des données de manière synthétique également. 
+Les données générées par ROSE sont considérées comme fournissant une meilleure estimation des données originales.
+
+```{r}
+Xytrain3 <- ROSE(ytrain ~ ., data = Xytrain, seed = 1)$data
+table(Xytrain3$ytrain)
+```
+
+Cet ensemble nous fournit également des méthodes pour vérifier l'exactitude du modèle en utilisant la méthode de bagging et holdout.
+
+Cela nous permet de nous assurer que nos prévisions résultantes ne souffrent pas d'une variance élevée.
+
+```{r}
+ROSE.holdout <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "holdout", extr.pred = function(obj)obj, seed = 1)
+ROSE.holdout
+```
+
+Nous constatons que notre précision se maintient à ~ 0,89 et montre que nos prévisions ne souffrent pas d'une variance élevée.
+
+
+```{r}
+Xtrain = Xytrain3[,1:17]
+ytrain = Xytrain3[,18]
+```
+
+
+
+On va donc retenter un SVM avec la méthode d'échantillonage ROSE, toujours avec un noyau linéaire et en centrant les données.
+```{r}
+##########Kernel linéaire
+model <- svm(Xtrain, ytrain, scale=T, type= "C-classification",kernel='linear')
+summary(model)
+```
+
+```{r}
+#Prédiction sur les données test
+pred = predict(model, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+On constate que le taux d'erreur est de `r round(err2*100,2)`%, ce qui est nettement meilleur que l'ancien modèle.
+Cependant l'aire sous la courbe est de `r roc.curve(ytest, pred)`, ce qui est légèrement en baisse mais cette baisse est négligeable.
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+On voit que la F mesure est de `r round(cf*100,2)`, toujours meilleur que l'autre modèle. On peut donc conclure que cette méthode d'échantillonage serait meilleur pour le SVM avec des données réduites.
+
+
+
+Nous allons tester un autre modèle de SVM simple mais cette fois avec les vraies données pour la classe minoritaire.
+Il y a environ 5000 données de classe minoritaire et 5000 de classe majoritaire.
+
+```{r}
+##########Kernel linéaire
+model <- svm(TXtrain, Tytrain, scale=T, type= "C-classification",kernel='linear')
+summary(model)
+```
+
+```{r}
+#Prédiction sur les données test
+pred = predict(model, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+On constate que le taux d'erreur est de `r round(err2*100,2)`%, le modèle avec l'échantillonage de la méthode ROSE était bien meilleur pour cette mesure.
+
+Cependant l'aire sous la courbe est de `r roc.curve(ytest, pred)`, légèrement meilleur que notre précédent modèle mais rien de significatif.
+
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+La F mesure est de `r round(cf*100,2)`, en dessous de l'ancien modèle.
+On pourrait donc conclure que parmi ces différentes méthodes d'échantillonage pour le SVM réalisé simplement, que celle de la méthode ROSE serait la plus efficace si on cherche à maximiser la F mesure.
+
+On va maintenant essayer de tuner le SVM pour essayer d'améliorer nos prédictions.
+
+Nous allons essayer d'ajuster notre modèle en tunant pour le moment deux hyperparamètres : C et Gamma.
+
+Pour rappel, l'hyperparamètre C est responsable de la taille de la marge du MVC. Cela signifie que les points situés à l'intérieur de cette marge ne sont classés dans aucune des deux catégories.  Plus la valeur de C est faible, plus la marge est importante
+
+L'hyperparamètre gamma doit être réglé pour mieux adapter l'hyperplan aux données.  Il est responsable du degré de linéarité de l'hyperplan, et pour cela, il n'est pas présent lors de l'utilisation de noyaux linéaires. Plus γ est petit, plus l'hyperplan aura l'air d'une ligne droite, tandis que si γ est trop grand, l'hyperplan sera plus courbé et pourrait trop bien délimiter les données, ce qui entraînerait un overfitting.
+
+
+```{r}
+#Optimisation de Gamma et C
+tuned = tune.svm(x=TXtrain,
+                 y=Tytrain, 
+                 scale=T, type = "C-classification", kernel='linear',
+                 cost = 10^(-1:2), 
+                 gamma = c(0.1, 1, 10),
+                 tunecontrol=tune.control(cross=5))
+tuned$performances
+```
+
+```{r}
+svmfit = tuned$best.model
+#Prédiction sur les données test
+pred = predict(svmfit, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+
+```{r}
+#Optimisation de Gamma et C
+tuned = tune.svm(x=Xtrain,
+                 y=ytrain, 
+                 scale=T, type = "C-classification", kernel='linear',
+                 cost = 10^(-1:2), 
+                 gamma = c(0.1, 1, 10),
+                 tunecontrol=tune.control(cross=5))
+tuned$performances
+```
+
+```{r}
+#Prédiction sur les données test
+pred = predict(model2, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')
+print(cf)
+```
+
+
+##########################################################################
+############## XGBOOST Gradient Boosting #################################
+##########################################################################
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+load(file = "D:/Téléchargements/M2/fouille de données/Xtrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/Xtest.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytest.Rdata")
+
+TX= cbind(Xtrain,ytrain)
+TXtrain = TX[ytrain==1,]
+ech = sort(sample(nrow(TX), 5000))
+p = TX[ech,]
+TXtrain = rbind(TXtrain,p)
+Tytrain = TXtrain$ytrain ; TXtrain = TXtrain[,-18]
+Txy=cbind(TXtrain,Tytrain)
+
+rm(ech,p,TXtrain,Tytrain,TX)
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.25))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+XYtrain=cbind(Xtrain[ech,],ytrain[ech])
+colnames(XYtrain)[18] = "ytrain"
+
+XYtest = cbind(Xtest[ech2,], ytest[ech2])
+colnames(XYtest)[18] = "ytest"
+
+table(XYtrain$ytrain)
+
+rm(ech,ech2)
+```
+#####################################################################################
+################## Gradient boosting avec 50/50 mais vraies données
+#####################################################################################
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(Txy %>% select(-Tytrain)))
+xgb_ytrain = Txy$Tytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+On va donc commencer par définir un objet trainControl, qui permet de contrôler la manière dont se fait l’entraînement du modèle, assuré par la fonction train().
+
+Ici, nous choisissons une validation croisée (method = ‘cv’) à 5 folds (number = 5). On choisit également d’autoriser la parallélisation des calculs (allowParallel = TRUE), de réduire la verbosité (verboseIter = FALSE).
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+On définit ensuite une grille de paramètres du modèle XGBoost appelée xgbGrid
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+nrounds: nombre d’itérations de boosting à effectuer. Plus il est grand, et plus c’est lent
+max_depth: profondeur d’arbre maximale. Risque d’over-fit si trop grand, et d’under-fit si trop petit
+colsample_bytree: pourcentage des colonnes pris pour construire un arbre (rappelle-toi, un arbre est construit avec un sous-ensemble des données: lignes et colonnes)
+eta: ou learning rate, ce paramètre contrôle la vitesse à laquelle on convergence lors de la descente du gradient fonctionnelle (par défaut = 0.3)
+gamma: diminution minimale de la valeur de la loss (fonction objectif) pour prendre la décision de partitionner une feuille
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+#####################################################################################
+######### Test avec méthode d'échantillonage over/undersampling avec autant de classe minoritaire que majoritaire
+#####################################################################################
+```{r}
+XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.5, seed=1)$data
+table(XYtrain$ytrain)
+```
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(XYtrain %>% select(-ytrain)))
+xgb_ytrain = XYtrain$ytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+#####################################################################################
+######### Test avec méthode d'échantillonage over/undersampling avec un ratio de 75/25
+#####################################################################################
+
+```{r}
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.25))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+XYtrain=cbind(Xtrain[ech,],ytrain[ech])
+colnames(XYtrain)[18] = "ytrain"
+```
+
+
+```{r}
+XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.25, seed=1)$data
+table(XYtrain$ytrain)
+```
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(XYtrain %>% select(-ytrain)))
+xgb_ytrain = XYtrain$ytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+```{r}
+xgbGrid <- expand.grid(nrounds = 200,  
+                       max_depth = 20,
+                       colsample_bytree = 0.5,
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
