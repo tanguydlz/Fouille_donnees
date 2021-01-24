@@ -108,29 +108,41 @@ Pour résoudre ce problème de classification, nous allons tester plusieurs mét
 
 ## La méthode Bagging
 Le bagging est une méthode générale pour ajuster plusieurs versions d'un modèle de prédiction, puis les combiner en une prédiction agrégée. L'idée est de faire coopérer plusieurs arbres. En effet, le bagging repose sur le fait que l'agrégation d'informations dans de grands groupes diversifiés aboutit souvent à des meilleurs décisions que celles qui auraient pu être prises par un seul membre du groupe.  
-Nous avons utilisé la fonction bagging du package adabag.  
-Nous avons d'abord tenté de faire un bagging avec les paramètres par défaut de la méthode bagging.
-Nous obtenons une F mesure de 0.019126 et une AUC de 0.669.
+Nous avons utilisé la fonction bagging du package adabag. Les  paramètres de cette fonction sont "mfinal" qui désigne le nombre d'itérations pour lesquelles le boosting est exécuté ou le nombre d'arbres à utiliser et "control" qui désigne les options qui contrôlent les détails de l'algorithme de construction des arbres.
+Nous avons d'abord tenté de faire un bagging avec les paramètres par défaut de la méthode bagging. C'est-à-dire avec 100 arbres utilisés.
 ```{r echo=FALSE}
 #Faisons un bagging avec les paramètres par defaut
+#Méthode
 bag_1 = bagging(ytrain~., data = Xytrain2)
-#bag_1$trees[[1]]
+#Prediction
 pred_bag1 = predict(bag_1, Xtest)
+#Evaluation
 cm_bag1 = confusionMatrix(as.factor(pred_bag1$class), as.factor(ytest), positive = "1", mode = "prec_recall")
-#cm_bag1 #F1 = 0.019126
-roc.curve(ytest, pred_bag1$class) #AUC = 0.659
+recall = cm_bag1$table[2,2]/(sum(cm_bag1$table[2,]))
+precision = cm_bag1$table[2,2]/(sum(cm_bag1$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag1$class, plotit = FALSE)$auc
+roc.curve(ytest, pred_bag1$class)
 ```
+Nous obtenons une F mesure de `r round(fmesure,4)` et une AUC de `r round(auc,4)`.
 
-Nous avons donc essayé de créer des arbres plus profond en spécifiant quelques options. Nous définissons une profondeur maximale de 30 et un nombre d'arbre égal à 100. Nous obtenons alors une F-mesure de 0.0406977 mais un AUC de 0.543. L'AUC désigne la capacité à retrouvé la classe positive. Notre modèle détecte donc moins bien la classe positive que le précédent.
+
+Nous avons donc essayé de créer des arbres plus profond en spécifiant quelques options. Nous définissons une profondeur maximale de 30 et un nombre d'arbre toujours égal à 100. 
 ```{r echo=FALSE}
 #Essayons d'autres parametres: arbre plus profond
 bag_2 = bagging(ytrain~., data = Xytrain2, mfinal=100, control = rpart.control(cp=0,maxdepth=30))
 pred_bag2 = predict(bag_2, Xtest)
 cm_bag2 = confusionMatrix(as.factor(pred_bag2$class), as.factor(ytest), positive = "1", mode = "prec_recall")
-#cm_bag2 #F1 = 0.0406977
+recall = cm_bag2$table[2,2]/(sum(cm_bag2$table[2,]))
+precision = cm_bag2$table[2,2]/(sum(cm_bag2$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag2$class, plotit = FALSE)$auc
 roc.curve(ytest, pred_bag2$class) #AUC = 0.543
 #La F mesure est meilleure mais l'AUC est moins bon et fait comme l'aléatoire
 ```
+
+Nous obtenons alors une F-mesure de `r round(fmesure,4)` mais un AUC de `r round(auc,4)`. L'AUC désigne la capacité à retrouvé la classe positive. Notre modèle détecte donc moins bien la classe positive que le précédent. D'ailleurs, il détecte aussi bien que ferait l'aléatoire.
+
 
 Nous allons donc repartir sur le premier modèle et tenter de l'améliorer.
 En effet, nous remarquons que certaines variables ont une influence nulle sur notre modèle
@@ -146,13 +158,16 @@ Nous allons donc les supprimer du modèle et voir comment évoluent les performa
 bag_3 = bagging(ytrain~D2CB+ScoringFP2+MontAnt+CA3TRetMtt+TAuxImpNB_CPM+VerifiAnceCPT3+ScoringFP1+CA3TR+TAuxImpNb_RB+ScoringFP3+DiffDAteTr1, data = Xytrain2)
 pred_bag3 = predict(bag_3, Xtest)
 cm_bag3 = confusionMatrix(as.factor(pred_bag3$class), as.factor(ytest), positive = "1", mode = "prec_recall")
-#cm_bag3 #F1 = 0.015423
-roc.curve(ytest, pred_bag3$class) #AUC = 0.668
+recall = cm_bag3$table[2,2]/(sum(cm_bag3$table[2,]))
+precision = cm_bag3$table[2,2]/(sum(cm_bag3$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag3$class, plotit = FALSE)$auc
+roc.curve(ytest, pred_bag3$class) 
 #On a légérement une meilleur Fmesure et la même
 ```
-La F-mesure étant de 0.015423 et l'AUC de 0.668, les performances n'ont pas été améliorées.  
+La F-mesure étant de `r round(fmesure,4)` et l'AUC de `r round(auc,4)`, les performances n'ont pas été améliorées.  
 
-Nous allons donc tenter de combiner les deux premiers modèles. Pour cela, nous récupérons les votes de chaque arbres dans les deux modèles et nous attribuons la classe majoritaire. Nous obtenons alors une F-mesure de 0.0286689 se situant entre les 2 modèles et une AUC de 0.620.
+Nous allons donc tenter de combiner les deux premiers modèles. Pour cela, nous récupérons les votes de chaque arbres dans les deux modèles et nous attribuons la classe à l'aide d'un vote de majorité.
 ```{r echo=FALSE}
 #pred_bag1
 #pred_bag2
@@ -163,10 +178,13 @@ classe = c()
 for (i in 1:dim(p)[1]) {
   classe[i] = ifelse(p[i,1]>p[i,2], 0, 1)
 }
-roc.curve(ytest, classe)
 cm_bag_cl = confusionMatrix(as.factor(classe), as.factor(ytest), positive = "1", mode = "prec_recall")
-#cm_bag_cl #F1 = 0.0286689
-#AUC = 0.620
+recall = cm_bag_cl$table[2,2]/(sum(cm_bag_cl$table[2,]))
+precision = cm_bag_cl$table[2,2]/(sum(cm_bag_cl$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, classe, plotit = FALSE)$auc
+roc.curve(ytest, classe)
 ```
 
+Nous obtenons alors une F-mesure de `r round(fmesure,4)` se situant entre les 2 modèles et une AUC de `r round(auc,4)`.  
 Ce modèle semble donc être un bon compromis entre la F-mesure et l'AUC issu des deux premiers modèles. Cependant, nous concluons que la méthode de bagging ne donne pas de très bon résultats sur notre jeu de données. Nous allons donc tenter d'autres modèles.
