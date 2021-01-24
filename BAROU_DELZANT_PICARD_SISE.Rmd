@@ -4,7 +4,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE,message=FALSE, warning=FALSE)
 ```
 
 ```{r include=FALSE}
@@ -22,6 +22,7 @@ library(clue)
 library(ggpubr)
 library(cluster)
 library("imbalance")
+library(ranger)
 set.seed(123)
 ```
 
@@ -33,9 +34,10 @@ summary(datas)
 str(datas)
 ```
 
-##########Preprocessing
-#Remplacer les "," par des "."
+# Preprocessing
+Nous avons réalisé un prétraitement des données : 
 ```{r}
+#Remplacer les "," par des "."
 datas$MontAnt = sub(",", ".", datas$MontAnt) 
 datas$ScoringFP1 = sub(",", ".", datas$ScoringFP1)
 datas$ScoringFP2 = sub(",", ".", datas$ScoringFP2)
@@ -160,7 +162,8 @@ De plus, nous avons décidé de supprimer les variables que nous n'avons pas con
 str(Xytrain)
 ```
 
-# Analyse synthétique et pre-processing
+# Analyse synthétique et pre-processing 
+
 Les données sur lesquelles nous travaillons sont dites déséquilibrées. En effet, le ratio des observations de la classe positive (opération frauduleuse) est très faible. Une approche naïve de classification qui ne prendrais pas en compte ce déséquilibre des classes et risquerais fortement de biaiser le modèle.
 ```{r echo=FALSE}
 ggplot(data=Xytrain, aes(x=factor(ytrain), fill=as.factor(ytrain))) +
@@ -205,10 +208,12 @@ plotComparison(Xytrain, Xytrain2, attrs = names(Xytrain)[c(5,17)], classAttr = "
 
 La première image montre les données initiales. On remarque beaucoup de données de la classe 0 et très peu de la classe 1. Dans la deuxième image, on peut voir que certaines données de la classe 0 ont été supprimées et que des données de la classe 1 ont été générées.  
 
-# Protocole expérimentale
+# Protocole expérimentale 
+
 Pour résoudre ce problème de classification, nous allons tester plusieurs méthodes supervisés et non supervisés que nous allons entraîner sur le jeu d'apprentissage précédemment ré-échantilloné contenant 20000 données. Nous allons tenter d'optimiser chacune de nos méthodes puis nous sélectionnerons celle qui fonctionne le mieux sur notre jeu de test comportant les 23137 dernières données du jeu de données initial. Nous évaluerons les performances de nos modèles à l'aide de la F-mesure et de l'AUC.
 
-## La méthode Bagging
+## La méthode Bagging 
+
 Le bagging est une méthode générale pour ajuster plusieurs versions d'un modèle de prédiction, puis les combiner en une prédiction agrégée. L'idée est de faire coopérer plusieurs arbres. En effet, le bagging repose sur le fait que l'agrégation d'informations dans de grands groupes diversifiés aboutit souvent à des meilleurs décisions que celles qui auraient pu être prises par un seul membre du groupe.  
 Nous avons utilisé la fonction bagging du package adabag. Les  paramètres de cette fonction sont "mfinal" qui désigne le nombre d'itérations pour lesquelles le boosting est exécuté ou le nombre d'arbres à utiliser et "control" qui désigne les options qui contrôlent les détails de l'algorithme de construction des arbres.
 Nous avons d'abord tenté de faire un bagging avec les paramètres par défaut de la méthode bagging. C'est-à-dire avec 100 arbres utilisés.
@@ -322,9 +327,7 @@ table(Xytrain$ytrain)
 ```
 
 
-######################################################
-########################### SVM ######################
-######################################################
+# SVM
 
 Les SVMs sont une famille d’algorithmes d‘apprentissage automatique qui permettent de résoudre des problèmes tant de classification que de régression ou de détection d’anomalie. Ils ont pour but de séparer les données en classes à l’aide d’une frontière aussi « simple » que possible, de telle façon que la distance entre les différents groupes de données et la frontière qui les sépare soit maximale. Cette distance est aussi appelée « marge » et les SVMs sont ainsi qualifiés de « séparateurs à vaste marge », les « vecteurs de support » étant les données les plus proches de la frontière. 
 Nous utilisons le package ’e1071’ pour l’implémentation des SVM. Ce package nous permettra d'utiliser les SVM, de faire nos validations croisées et nos prédictions. On pourra y faire varier nos valeurs de Gamma et C. 
@@ -509,10 +512,7 @@ print(round(cf*100,2))
 ```
 
 
-##########################################################################
-############## XGBOOST Gradient Boosting #################################
-##########################################################################
-
+# XGBOOST Gradient Boosting
 
 Nous allons maintenant nous pencher sur une autre méthode, celle du Gradient Tree Boosting. Pour cela, nous utiliserons la librairie XGBoost.
 XGBoost fait partie de la famille des méthodes ensembliste. La différence par rapport aux méthodes classiques, c’est qu’au lieu d’entraîner le meilleur modèle possible sur les données, on va en entraîner des milliers sur des sous-parties diverses du jeu de données d’apprentissage, puis les faire voter pour prendre notre décision.
@@ -1017,7 +1017,53 @@ Nous n'avons pas réalisé de prédiction à l'aide des modèles de CAH, car aun
 
 Aucun de ces trois modèles n'a donné de résultats intéréssant, nous ne nous sommes pas attarder deçu, c'est pour cela que nous n'avons pas chercher à trouver le meilleur modèle.
 
-Nous avons finis de nous intérésser à des modèles d'apprentissage non supérvisé, aucun d'eux nous a permis de définir corresctement les fraudes. Nous allons passer à des modèles supévisés.
+Nous avons finis de nous intérésser à des modèles d'apprentissage non supérvisé, aucun d'eux nous a permis de définir corresctement les fraudes. Nous allons passer à des modèles supérvisés.
 
+# Random Forest
 
+Nous allons nous intéresser à un algorithme de machine learning, le random forest, forêt aléatoire en français. Le principe de cette méthode est de créer plusieurs arbres. En revanche, avec les forêts aléatoires on a clairement un effet boîte noire comme avec les réseaux de neurones. 
 
+Néanmoins pour être en mesure d’expliquer le modèle nous pouvons calculer l’importance de chaque variable pour présenter leur contribution au modèle. Vous pouvez utiliser par exemple le critère Mean Decrease Gini qui calcule la diminution d’hétérogénéité de chaque noeud faisant intervenir cette variable.
+
+Il existe deux packages pour implémenter une forêt aléatoire, il existe la fonction de base de R "randomForest" et l'autre fonction est "ranger". La deuxième fonction est celle qui recommandé car elle est plus rapide.
+
+Voici l'importance de chaque variable. Ce sont les variables qui influent le plus sur la prédiction d'une fraude, de la variable y.
+
+```{r}
+#rf<- ranger(ytrain ~ ., data = Xtrain, importance = "impurity", mtry=2,num.tree=100)
+load(file = "rf.Rdata")
+rf$variable.importance
+```
+
+Aprés avoir réaliser la forêt aléatoire et l'avoir analysé, nous allons prédire les valeurs, les ytest.
+
+```{r}
+#Prédiction de Xtest
+pred = predict(rf, data = data.frame(Xtest))
+```
+
+Nous allons observer les indicateurs de performance pour ce modèle.
+
+```{r}
+#courbe ROC
+roc.curve(ytest, pred$predictions)
+
+#F mesure
+cf <- confusionMatrix(pred$predictions, ytest, mode = "prec_recall", positive = '1')
+print(cf)
+```
+
+Ici pour cette forêt aléatoire nous pouvons voir qu'il y a 71 fraude bien prédite. De plus la f-mesure est ici intéréssante, elle vaut 11,08% ce qui nous indique un modèle intéréssant. Néamoins la courbe et l'AUC n'ont pas un bon score.
+
+Nous pensions utiliser un gridsearch pour trouver le meilleur modèle possible. Pour cela nous avons trouver la fonction "expand.grid" ainsi que la fonction "train" avec la méthode "ranger". La  grille recherchant les meilleurs paramètres permet de varier trois paramètres, "mtry" de 2 à 4, splitrule" soit en "gini" soit en"extratrees" et "min.node.size" par 1, 3 ou 5. Il est aussi possible de réaliser une recherche aléatoire des hyperpaaramètres, un "random search".
+
+```{r}
+#grid<-expand.grid(mtry=2:4, splitrule=c("gini","extratrees"), min.node.size=c(1,3,5))
+
+#fitControl<-trainControl(method = "cv", number=10, search="grid")
+
+#ranger_model_grid<-train(ytrain ~ ., data = Xtrain, method="ranger",num.trees=200, trControl=fitControl, tuneGrid= grid)
+
+```
+
+Malheureusement, nos machines personnelles ne sont pas assez performante pour faire tourner ce  genre de recherche même en diminuant la taille des arbres, ou en faisant des recherches plus fines, les calcules était trop long.
