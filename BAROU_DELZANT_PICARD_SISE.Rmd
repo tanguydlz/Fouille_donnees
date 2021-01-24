@@ -10,11 +10,17 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r include=FALSE}
 library(e1071)
 library(dplyr)
+library(factoextra)
+library(ggplot2)
 library(caTools)
 library(ROSE)
 library(caret)
 library(adabag)
+library(car)
 library(xgboost)
+library(clue)
+library(ggpubr)
+library(cluster)
 library("imbalance")
 set.seed(123)
 ```
@@ -284,6 +290,10 @@ roc.curve(ytest, classe)
 
 Nous obtenons alors une F-mesure de `r round(fmesure,4)` se situant entre les 2 modèles et une AUC de `r round(auc,4)`.  
 Ce modèle semble donc être un bon compromis entre la F-mesure et l'AUC issu des deux premiers modèles. Cependant, nous concluons que la méthode de bagging ne donne pas de très bon résultats sur notre jeu de données. Nous allons donc tenter d'autres modèles.
+
+```{r}
+rm(list = ls())
+```
 
 ```{r}
 load(file = "D:/Téléchargements/M2/fouille de données/Xtrain.Rdata")
@@ -778,4 +788,236 @@ print(round(cf*100,2))
 Le taux d’erreur est de 0.03%. L’AUC est de 50.6% tandis que la F mesure est de 2.27%.  Ce modèle n’est vraiment pas bon par rapport à l’ancien dans notre recherche de maximisation de la F mesure.
 
 Concernant le Gradient Tree Boosting, on pourrait retenir ce modèle pour répondre à notre problème vu qu’il produit de bon résultat. Il faudrait lui faire apprendre un maximum de données d’apprentissage tout en équilibrant parfaitement les deux classes. On pensait déjà avoir de bons résultats avec cette méthode car XGBoost a une excellente précision et s’adapte bien à tous types de données et de problématiques, ce qui en fait l’algorithme idéal quand la performance et la rapidité priment.
+
+```{r}
+rm(list = ls())
+```
+
+
+# Apprentissage non supervisé
+
+Nous avons testé quelques modèles d’apprentissage non supervisé pour prédire notre variable, nous avons tester les méthodes : 
+
+- K-means
+-	Pam (k-médoïd)
+-	CAH
+
+Nous cherchons à prédire la variable y, mais l'apprentissage non supervisé ne permet pas de prédire une variable mais de classer les individus. Nous allons alors essayer de classer les individus de la même manière que la variable y. Pour cela nous allons demander aux algorithme de classer en deux les individus. C'est à adire que k=2.
+
+## 1. K-means
+
+Nous allons essayer, avec la méthode des k-means de détecter des fraudes. L'algorithme des k-means a pour but de créer un certain nombre de groupes (k prédéfinie) selon les données d'entrée. 
+
+Le principe du k-means est de créer des classes selon les données. Pour cela l'algorithme choisit aléatoirement autant de barycentre que de nombre de classe k, dans le nuage de point des données (les barycentres sont des individus à la première itération). Puis l'algorithme permet de regrouper chaque individu selon le barycentre le plus proche. Les barycentres de chaque classe sont recalculer, puis les individdus sont reclassifier selon les nouveaux barycentre puis l'expérience est réitérer jusqu'à la convergence du problème, c'est à dire que les barycentres ne changent plus de valeurs, et que les individus ne changent plus de groupe. 
+En théorie, la convergence va créer du sur-apprentissage, donc il faut être vigilants.
+
+```{r}
+#chargement des données 
+load(file = "Xtrain.Rdata")
+load(file = "ytrain.Rdata")
+load(file = "Xtest.Rdata")
+load(file = "ytest.Rdata")
+set.seed(123)
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.1))
+Xtrain=Xtrain[ech,]
+ytrain = ytrain[ech]
+
+```
+
+Pour la réalisation d'un K-means avec deux classes à prédire, nous avons utiliser des données d'entreinement normalisé. Puis nous avons comparer les groupes créés avec les valeurs de y.
+
+```{r}
+#K-means de 2 groupes :
+groupes.kmeans <- kmeans(scale(Xtrain),centers=2, nstart = 50)
+
+```
+
+
+Table de la fréquence des individus selon leurs valeurs de y et des classes prédites :
+
+```{r}
+#groupe selon la variable y
+grp.y<-table(ytrain,groupes.kmeans$cluster)
+grp.y<-data.frame(rbind(grp.y))
+
+grp.y.freq<-grp.y
+for (i in 1:length(grp.y[,1])) {
+  grp.y.freq[i,]<-prop.table(grp.y[i,])
+}
+knitr::kable(grp.y.freq)
+```
+
+La classification k-means ne classe pas parfaitement les individus comme la variable y.
+
+Nous allons maintenant réaliser une ACP (Analyse en Composante Principale) pour analyser et réduir le nombre de dimension.
+
+```{r}
+# Réduction de dimension en utilisant l'ACP
+res.pca <- prcomp(Xtrain,  scale = TRUE)
+# Coordonnées des individus
+ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord)
+# Ajouter les clusters obtenus à l'aide de l'algorithme k-means
+ind.coord$cluster <- factor(groupes.kmeans$cluster)
+# Ajouter les groupes d'espèces issues du jeu de données initial
+ind.coord$y <- ytrain
+# Pourcentage de la variance expliquée par les dimensions
+eigenvalue <- round(get_eigenvalue(res.pca), 1)
+variance.percent <- eigenvalue$variance.percent
+```
+
+Représenation graphique des individus coloré selon les classes crée par les k-means, les points ont une forme différentes selon sa valeur de y (0 ou 1). Avec y de l'échantillon d'apprentissage.
+
+```{r}
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2", 
+  color = "cluster", palette = "npg", ellipse = TRUE, ellipse.type = "convex",
+  shape = "y", size = 1.5,  legend = "right", ggtheme = theme_bw(),
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+) +
+  stat_mean(aes(color = cluster), size = 4)
+```
+
+La première dimension comprend `r variance.percent[1]`% et la deuxième dimension comprend  `r variance.percent[2]`% d'informations. Nous pouvons voir que les valeurs de y se trouve dans les deux groupes crée par les k-means, de plus les deux groupes crée sont très proche et la séparation créée semble totalement aléatoire.
+
+### Prédiction
+
+Nous allons essayer de prédire les fraude grâce à ce modèle. Pour cela nous allons regarder la distribution de la variable prédite avec la variable test, ce qui correspond à la matrice de confusion, ainsi qu'un ensemble d'indicateur jugant de la performance des modèles.
+
+```{r}
+#Prédiction sur les données test
+pred=cl_predict(groupes.kmeans,Xtest)
+#F mesure
+pred<- recode(as.character(pred), '"2" = 1 ; else= 0')
+cf <- confusionMatrix(as.factor(pred), ytest, mode = "prec_recall", positive = '1')
+print(cf)
+```
+```{r}
+roc.curve(ytest, pred)
+```
+
+Nous pouvons voir que la courbe ROC est plus élevé que la courbe de l'aléatoire. Néamoins la f-mesure est trés trés faible (`r round(cf$byClass[7]*100,2)`%). Ce qui nous permet de conclure que ce modèles ne permet pas la détection de fraude. Nous allons tester un autre modèle de clusering.
+
+## 2. PAM
+
+Maintenant nous allons essayer une autre méthode PAM (Partitioning Around Medoids), qui est une méthode de clustering semblable aux k-means, mais plus robuste et moins sensible. La méthode est similaire au k-means, il s'agit d'une méthode de k-medoides. La différence entre ces deux méthodes et que les k-means utilisent la moyenne alors que les k-medoides des medoid qui le rendent plus robuste, prenant moins en compte les valeurs extrèmes. Il est possible d'utiliser la distance euclidienne ou la distance de manhattan. 
+
+```{r}
+ech2 = sort(sample(nrow(Xtrain), nrow(Xtrain)*.1))
+Xtrainpam=Xtrain[ech2,]
+ytrainpam = ytrain[ech2]
+groupes.pam<-pam(scale(Xtrainpam), 2, metric = "euclidean", stand = TRUE)
+
+```
+
+Pour la réalisation d'un PAM avec deux classes à prédire, nous avons utiliser des données d'entreinement normalisé. Puis nous avons comparer les groupes créés avec les valeurs de y.
+
+Table de la fréquence des individus selon leurs valeurs de y et des classes prédites :
+
+```{r}
+#groupe selon la variable y
+grp.y<-table(ytrainpam,groupes.pam$cluster)
+grp.y<-data.frame(rbind(grp.y))
+
+grp.y.freq<-grp.y
+for (i in 1:length(grp.y[,1])) {
+  grp.y.freq[i,]<-prop.table(grp.y[i,])
+}
+knitr::kable(grp.y.freq)
+```
+
+Nous allons maintenant ré-utiliser l'ACP (Analyse en Composante Principale) réalisé précédement pour analyser les résultats.
+
+Représenation graphique des individus coloré selon les classes crée par PAM, les points ont une forme différentes selon sa valeur de y (0 ou 1). Avec y de l'échantillon d'apprentissage.
+
+```{r}
+# Chagement de couleur selon PAM :
+ind.coord$cluster <- factor(groupes.pam$cluster)
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2", 
+  color = "cluster", palette = "npg", ellipse = TRUE, ellipse.type = "convex",
+  shape = "y", size = 1.5,  legend = "right", ggtheme = theme_bw(),
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+) +
+  stat_mean(aes(color = cluster), size = 4)
+```
+
+Nous pouvons voir que les individus ne sont pas vraiment séparé dans cette représenation. De plus les deux première dimensions de l'ACP n'apporte pas beaucoup d'informations. Ce graphique ne montre pas de distinction des groupes grâce à "pam".
+
+### Prédiction
+
+Nous essayons de prédire les fraudes à l'aide de la méthode pam. 
+
+```{r}
+#Prédiction sur les données test
+pred_pam=cl_predict(groupes.pam,Xtest)
+#F mesure
+pred_pam<- recode(as.character(pred_pam), '"2" = 1 ; else= 0')
+cf_pam <- confusionMatrix(as.factor(pred_pam), ytest, mode = "prec_recall", positive = '1')
+print(cf_pam)
+#Courbe ROC
+roc.curve(ytest, pred_pam)
+```
+
+Nous pouvons voir que la courbe ROC est plus élevé que la courbe de l'aléatoire. Néamoins la f-mesure est trés trés faible (`r round(cf_pam$byClass[7]*100,2)`%). Ce qui nous permet de conclure que ce modèles ne permet pas la détection de fraude. 
+
+Nous n'avons pas obtenu plus de résultat avec la méthode "pam". Nous allons essayer un dernier modèle de classification, la classification ascendante hiérarchique (CAH).
+
+
+## 3. CAH
+
+Le dernier algorithme de classification est la CAH, nous 
+
+```{r}
+#centrage réduction des données
+Xtrain.cr <- scale(Xtrainpam,center=T,scale=T)
+
+#distance entre individus
+d.ind <- dist(Xtrain.cr)
+
+#CAH - critère de Ward
+cah.ward <- hclust(d.ind,method="ward.D2")
+
+#affichage dendrogramme
+plot(cah.ward)
+
+#dendrogramme avec matérialisation des groupes
+rect.hclust(cah.ward,k=2)
+
+#découpage en 2 groupes
+groupes.cah <- cutree(cah.ward,k=2)
+
+#liste des groupes
+knitr::kable(table(groupes.cah,ytrainpam))
+
+```
+
+Nous avons testé une CAH coupé en deux (car c'est le nombre de facteur de y), il n'y a pas de classe qui représente, définis, différencie bien les 0 et 1 sur y.
+
+```{r}
+
+#affichage dendrogramme
+plot(cah.ward)
+
+#dendrogramme avec matérialisation des groupes
+rect.hclust(cah.ward,k=4)
+
+#découpage en 4 groupes
+groupes.cah <- cutree(cah.ward,k=4)
+
+#liste des groupes
+knitr::kable(table(groupes.cah,ytrainpam))
+
+```
+
+Nous avons testé une CAH en quatre (car c'est l'endroit le plus justement placé pour couper l'arbre), il n'y a pas de classe qui représente, définis, différencie bien les 0 et 1 sur y.
+
+Nous n'avons pas réalisé de prédiction à l'aide des modèles de CAH, car auncun ne parvient à différencier les fraudes (la variable y), comme poour les modèles d'apprentissahe non supérvisé précédents.
+
+Aucun de ces trois modèles n'a donné de résultats intéréssant, nous ne nous sommes pas attarder deçu, c'est pour cela que nous n'avons pas chercher à trouver le meilleur modèle.
+
+Nous avons finis de nous intérésser à des modèles d'apprentissage non supérvisé, aucun d'eux nous a permis de définir corresctement les fraudes. Nous allons passer à des modèles supévisés.
+
+
 
