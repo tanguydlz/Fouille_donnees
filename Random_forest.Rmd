@@ -1,0 +1,71 @@
+---
+title: "Random_forest"
+author: "Amélie Picard"
+date: "10/01/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE, warning=FALSE)
+```
+
+## Random forest
+
+
+
+```{r}
+library(ranger)
+```
+
+
+Nous allons nous intéresser à un Le principe de la méthode de forêt aléatoire et de créer plusieurs arbres. En revanche, avec les forêts aléatoires on a clairement un effet boîte noire comme avec les réseaux de neurones. 
+
+Néanmoins pour être en mesure d’expliquer le modèle nous pouvons calculer l’importance de chaque variable pour présenter leur contribution au modèle. Vous pouvez utiliser par exemple le critère Mean Decrease Gini qui calcule la diminution d’hétérogénéité de chaque noeud faisant intervenir cette variable.
+
+Il existe deux packages pour implémenter une forêt aléatoire, il existe la fonction de base de R "randomForest" et l'autre fonction est "ranger". La deuxième fonction est celle qui recommandé car elle est plus rapide.
+
+mtry=2 : 3h pr tourner
+A tester : 
+```{r}
+rf<- ranger(ytrain ~ ., data = Xtrain, importance = "impurity", mtry=2,num.tree=100)
+rf$variable.importance
+```
+
+
+Aprés avoir réaliser la forêt aléatoire et l'avoir analysé, nous allons prédire les valeurs, les ytest.
+
+```{r}
+library(ROSE)
+roc.curve(ytest, pred$predictions)
+```
+Calcule de la F-mesure : 
+
+```{r}
+#F mesure
+library(caret)
+cf <- confusionMatrix(pred$predictions, ytest, mode = "prec_recall", positive = '1')
+print(ytest)
+print(pred$predictions)
+print(cf)
+```
+
+Nous pouvons voir que les indicateurs de l'éfficasité d'un modèle. Ici pour cette forêt aléatoire nous pouvons voir qu'il y a 71 fraude bien prédit, que 
+
+Nous allons utiliser un gridsearch pour trouver le meilleur modèle possible. POur cela nous utiliserons la fonction "expand.grid" ainsi que la fonction "train" avec la méthode "ranger". La  grille recherchant les meilleurs paramètres permet de varier trois paramètres, "mtry" de 2 à 4, splitrule" soit en "gini" soit en"extratrees" et "min.node.size" par 1, 3 ou 5.
+
+```{r}
+library(caret)
+grid<-expand.grid(mtry=2:4, splitrule=c("gini","extratrees"), min.node.size=c(1,3,5))
+
+fitControl<-trainControl(method = "cv", number=10, search="grid")
+
+set.seed(42)
+
+ranger_model_grid<-train(ytrain ~ ., data = Xtrain, method="ranger",num.trees=200, trControl=fitControl, tuneGrid= grid)
+
+```
+
+
+ 
+Nous pouvons aussi essayer de réaliser un recherche aléatoire des hyperpaaramètres, un "random search".
+
