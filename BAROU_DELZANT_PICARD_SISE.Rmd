@@ -1,0 +1,781 @@
+---
+title: "Fouille de données"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(e1071)
+library(dplyr)
+library(caTools)
+library(ROSE)
+library(caret)
+library(adabag)
+library(xgboost)
+library("imbalance")
+set.seed(123)
+```
+
+```{r}
+datas = read.table("dataproject.txt", sep = ";", header = TRUE)
+#target = datas$FlAgImpAye
+#features = datas[,-23]
+summary(datas)
+str(datas)
+```
+
+##########Preprocessing
+#Remplacer les "," par des "."
+```{r}
+datas$MontAnt = sub(",", ".", datas$MontAnt) 
+datas$ScoringFP1 = sub(",", ".", datas$ScoringFP1)
+datas$ScoringFP2 = sub(",", ".", datas$ScoringFP2)
+datas$ScoringFP3 = sub(",", ".", datas$ScoringFP3)
+datas$TAuxImpNb_RB = sub(",", ".", datas$TAuxImpNb_RB)
+datas$TAuxImpNB_CPM = sub(",", ".", datas$TAuxImpNB_CPM)
+datas$CA3TRetMtt = sub(",", ".", datas$CA3TRetMtt)
+datas$DiffDAteTr1 = sub(",", ".", datas$DiffDAteTr1) 
+datas$DiffDAteTr2 = sub(",", ".", datas$DiffDAteTr2)
+datas$DiffDAteTr3 = sub(",", ".", datas$DiffDAteTr3)
+datas$CA3TR = sub(",", ".", datas$CA3TR)
+datas$VerifiAnceCPT1 = sub(",", ".", datas$VerifiAnceCPT1)
+datas$VerifiAnceCPT2 = sub(",", ".", datas$VerifiAnceCPT2)
+datas$VerifiAnceCPT3 = sub(",", ".", datas$VerifiAnceCPT3)
+```
+
+```{r}
+datas$MontAnt = sub(",", ".", datas$MontAnt) 
+datas$ScoringFP1 = sub(",", ".", datas$ScoringFP1)
+datas$ScoringFP2 = sub(",", ".", datas$ScoringFP2)
+datas$ScoringFP3 = sub(",", ".", datas$ScoringFP3)
+datas$TAuxImpNb_RB = sub(",", ".", datas$TAuxImpNb_RB)
+datas$TAuxImpNB_CPM = sub(",", ".", datas$TAuxImpNB_CPM)
+datas$CA3TRetMtt = sub(",", ".", datas$CA3TRetMtt)
+datas$DiffDAteTr1 = sub(",", ".", datas$DiffDAteTr1) 
+datas$DiffDAteTr2 = sub(",", ".", datas$DiffDAteTr2)
+datas$DiffDAteTr3 = sub(",", ".", datas$DiffDAteTr3)
+datas$CA3TR = sub(",", ".", datas$CA3TR)
+datas$VerifiAnceCPT1 = sub(",", ".", datas$VerifiAnceCPT1)
+datas$VerifiAnceCPT2 = sub(",", ".", datas$VerifiAnceCPT2)
+datas$VerifiAnceCPT3 = sub(",", ".", datas$VerifiAnceCPT3)
+```
+
+```{r}
+#Transformation en numérique
+datas$MontAnt = as.numeric(datas$MontAnt)
+datas$ScoringFP1 = as.numeric(datas$ScoringFP1)
+datas$ScoringFP2 = as.numeric(datas$ScoringFP2)
+datas$ScoringFP3 = as.numeric(datas$ScoringFP3)
+datas$TAuxImpNb_RB = as.numeric(datas$TAuxImpNb_RB)
+datas$TAuxImpNB_CPM = as.numeric(datas$TAuxImpNB_CPM)
+datas$CA3TRetMtt = as.numeric(datas$CA3TRetMtt)
+datas$DiffDAteTr1 = as.numeric(datas$DiffDAteTr1) 
+datas$DiffDAteTr2 = as.numeric(datas$DiffDAteTr2)
+datas$DiffDAteTr3 = as.numeric(datas$DiffDAteTr3)
+datas$CA3TR = as.numeric(datas$CA3TR)
+datas$VerifiAnceCPT1 = as.numeric(datas$VerifiAnceCPT1)
+datas$VerifiAnceCPT2 = as.numeric(datas$VerifiAnceCPT2)
+datas$VerifiAnceCPT3 = as.numeric(datas$VerifiAnceCPT3)
+```
+
+```{r}
+#Arrondir à deux décimales
+datas$MontAnt = round(datas$MontAnt, 2)
+datas$ScoringFP1 = round(datas$ScoringFP1, 2)
+datas$ScoringFP2 = round(datas$ScoringFP2, 2)
+datas$ScoringFP3 = round(datas$ScoringFP3, 2)
+datas$TAuxImpNb_RB = round(datas$TAuxImpNb_RB, 2)
+datas$TAuxImpNB_CPM = round(datas$TAuxImpNB_CPM, 2)
+datas$CA3TRetMtt = round(datas$CA3TRetMtt, 2)
+datas$DiffDAteTr1 = round(datas$DiffDAteTr1, 2) 
+datas$DiffDAteTr2 = round(datas$DiffDAteTr2, 2)
+datas$DiffDAteTr3 = round(datas$DiffDAteTr3, 2)
+datas$CA3TR = round(datas$CA3TR, 2)
+datas$VerifiAnceCPT1 = round(datas$VerifiAnceCPT1, 2)
+datas$VerifiAnceCPT2 = round(datas$VerifiAnceCPT2, 2)
+datas$VerifiAnceCPT3 = round(datas$VerifiAnceCPT3, 2)
+```
+
+
+```{r}
+#Conversion en facteur
+datas$CodeDecision = as.factor(datas$CodeDecision)
+datas$FlAgImpAye = as.factor(datas$FlAgImpAye)
+```
+
+
+```{r}
+#Nvelle donn?es sans les variables non utilis?e et save en Rdata des train et test pour importer plus rapidemment
+new_data<-datas[,c(-1,-2,-4,-5,-22)]
+Xtrain = new_data[1:2000000,-18]
+ytrain = new_data[1:2000000,18]
+Xtest = new_data[2000001:nrow(new_data),-18]
+ytest = new_data[2000001:nrow(new_data),18]
+
+save(Xtrain, file = "Xtrain.RData")
+save(ytrain, file = "ytrain.RData")
+save(Xtest, file = "Xtest.RData")
+save(ytest, file = "ytest.RData")
+```
+
+Le but de ce projet est d'étudier des données issues d’une enseigne de la grande distribution ainsi que de certains organismes bancaires. Les données représentent des transactions effectuées par chèque  dans un magasin de l’enseigne quelque part en France.  
+La variable à prédire est la variable FlagImpaye, il s’agit d’une variable binaire qui peut prendre les valeurs suivantes : 0 la transaction est acceptée et considérée comme "normale", 1 la
+transaction est refusée car considérée comme "frauduleuse".
+
+# Travail préliminaire
+
+```{r include=FALSE}
+load(file = "Fouille_donnees/Xtrain.Rdata")
+load(file = "Fouille_donnees/ytrain.Rdata")
+load(file = "Fouille_donnees/Xtest.Rdata")
+load(file = "Fouille_donnees/ytest.Rdata")
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.01))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+Xtrain=Xtrain[ech,]
+ytrain = ytrain[ech]
+
+Xtest = Xtest[ech2,]
+ytest = ytest[ech2]
+
+Xytrain = cbind(Xtrain,ytrain)
+```
+
+Le jeu de données est composé de 2 231 369 transactions et 23 variables. Lors du chargement des données, il a fallu effectué un travail d'hamonisation.
+```{r echo=FALSE}
+str(datas)
+```
+En effet, comme le montre le résultat précédent, certaines variables numériques sont de type chaîne de caratère. Nous avons donc commencé par remplacer les virgules par des points pour les variables numériques et nous les avons convertit en type "numéric". Nous avons ensuite arrondi les montant à deux décimales. Nous avons aussi recodé la variable d'intéret, FlAgImpAye, en variable de type facteur.  
+De plus, nous avons décidé de supprimer les variables que nous n'avons pas considéré pertinentes pour notre étude. Ainsi, la nouvelle structure des données avec les variables sélectionnées est la suivante:
+```{r echo=FALSE}
+str(Xytrain)
+```
+
+# Analyse synthétique et pre-processing
+Les données sur lesquelles nous travaillons sont dites déséquilibrées. En effet, le ratio des observations de la classe positive (opération frauduleuse) est très faible. Une approche naïve de classification qui ne prendrais pas en compte ce déséquilibre des classes et risquerais fortement de biaiser le modèle.
+```{r echo=FALSE}
+ggplot(data=Xytrain, aes(x=factor(ytrain), fill=as.factor(ytrain))) +
+  geom_bar(width = 0.7)+ 
+  ggtitle("Distribution des observations dans le jeu de données")+
+  ylab("Effective")+
+  xlab("Class")+
+  theme_minimal()
+```
+
+En effet, seulement 3% des observations sont frauduleuses, et donc appartiennent à la classe positive. Pour repérer ces opérations, nous aurions pu penser que les montants des opérations frauduleuses sont plus élevés que les autres  mais le graphique suivant montre que ce n'est pas le cas.
+
+```{r echo=FALSE}
+ggplot(Xytrain, aes(x=MontAnt, color=ytrain)) + 
+  geom_boxplot()
+```
+
+Nous allons donc procéder à un ré-échantillonnage pour tenter de résoudre le problème de désèquilibre. 
+Il existe plusieurs stratégies de ré-échantillonnage pour ajuster la distribution des classes d'un jeu de données: l'oversampling et l'undersampling.  
+L'oversampling consiste à générer de nouvelles observations de la classe minoritaire. L’algorithme le plus utilisé est SMOTE qui génére de nouvelles observations entre des individus de la
+plus petite classe.  
+L'undersampling consiste à ré-échantilloner la classe majoritaire de manière à obtenir un effectif
+proche de la classe minoritaire. L'idée est donc de supprimer les observations de la classe majoritaire.  
+Il est aussi possible de combiner ces deux approches. Nous avons donc choisi cette dernière options en ré-échantillonnant les données à l'aide de la fonction "ovun.sample" avec une probabilié de rééchantillonnage à partir de la classe minoritaire de 50%. Nous nous sommes donc retrouvé avec un jeu de données avec une répartition identique de la classe majoritaire et de la classe minoritaire. Le temps de calcul étant très long et les données très volumineuses, nous avons au préalable isolé les 2 000 000 premières lignes pour le jeu d'apprentissage et 231 370 lignes pour le jeu de test. Nous avons ensuite tiré aléatoirement 20000 lignes du jeu d'apprentissage et avons rééquilibré ce jeu de données de 20000 lignes.
+```{r echo=FALSE}
+Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
+Xtrain2 = Xytrain2[,1:17]
+ytrain2 = Xytrain2[,18]
+
+ggplot(data=Xytrain2, aes(x=factor(ytrain), fill=as.factor(ytrain))) +
+  geom_bar(width = 0.7)+
+  ggtitle("Distribution des observations dans le nouveau jeu de données")+
+  ylab("Effective")+
+  xlab("Class")+
+  theme_minimal()
+```
+
+Nous pouvons ensuite observer la génération de nouvelles données avec un graphique de comparaison.
+```{r echo=FALSE}
+plotComparison(Xytrain, Xytrain2, attrs = names(Xytrain)[c(5,17)], classAttr = "ytrain")
+```
+
+La première image montre les données initiales. On remarque beaucoup de données de la classe 0 et très peu de la classe 1. Dans la deuxième image, on peut voir que certaines données de la classe 0 ont été supprimées et que des données de la classe 1 ont été générées.  
+
+# Protocole expérimentale
+Pour résoudre ce problème de classification, nous allons tester plusieurs méthodes supervisés et non supervisés que nous allons entraîner sur le jeu d'apprentissage précédemment ré-échantilloné contenant 20000 données. Nous allons tenter d'optimiser chacune de nos méthodes puis nous sélectionnerons celle qui fonctionne le mieux sur notre jeu de test comportant les 23137 dernières données du jeu de données initial. Nous évaluerons les performances de nos modèles à l'aide de la F-mesure et de l'AUC.
+
+## La méthode Bagging
+Le bagging est une méthode générale pour ajuster plusieurs versions d'un modèle de prédiction, puis les combiner en une prédiction agrégée. L'idée est de faire coopérer plusieurs arbres. En effet, le bagging repose sur le fait que l'agrégation d'informations dans de grands groupes diversifiés aboutit souvent à des meilleurs décisions que celles qui auraient pu être prises par un seul membre du groupe.  
+Nous avons utilisé la fonction bagging du package adabag. Les  paramètres de cette fonction sont "mfinal" qui désigne le nombre d'itérations pour lesquelles le boosting est exécuté ou le nombre d'arbres à utiliser et "control" qui désigne les options qui contrôlent les détails de l'algorithme de construction des arbres.
+Nous avons d'abord tenté de faire un bagging avec les paramètres par défaut de la méthode bagging. C'est-à-dire avec 100 arbres utilisés.
+```{r echo=FALSE}
+#Faisons un bagging avec les paramètres par defaut
+#Méthode
+bag_1 = bagging(ytrain~., data = Xytrain2)
+#Prediction
+pred_bag1 = predict(bag_1, Xtest)
+#Evaluation
+cm_bag1 = confusionMatrix(as.factor(pred_bag1$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+recall = cm_bag1$table[2,2]/(sum(cm_bag1$table[2,]))
+precision = cm_bag1$table[2,2]/(sum(cm_bag1$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag1$class, plotit = FALSE)$auc
+roc.curve(ytest, pred_bag1$class)
+```
+Nous obtenons une F mesure de `r round(fmesure,4)` et une AUC de `r round(auc,4)`.
+
+
+Nous avons donc essayé de créer des arbres plus profond en spécifiant quelques options. Nous définissons une profondeur maximale de 30 et un nombre d'arbre toujours égal à 100. 
+```{r echo=FALSE}
+#Essayons d'autres parametres: arbre plus profond
+bag_2 = bagging(ytrain~., data = Xytrain2, mfinal=100, control = rpart.control(cp=0,maxdepth=30))
+pred_bag2 = predict(bag_2, Xtest)
+cm_bag2 = confusionMatrix(as.factor(pred_bag2$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+recall = cm_bag2$table[2,2]/(sum(cm_bag2$table[2,]))
+precision = cm_bag2$table[2,2]/(sum(cm_bag2$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag2$class, plotit = FALSE)$auc
+roc.curve(ytest, pred_bag2$class) #AUC = 0.543
+#La F mesure est meilleure mais l'AUC est moins bon et fait comme l'aléatoire
+```
+
+Nous obtenons alors une F-mesure de `r round(fmesure,4)` mais un AUC de `r round(auc,4)`. L'AUC désigne la capacité à retrouvé la classe positive. Notre modèle détecte donc moins bien la classe positive que le précédent. D'ailleurs, il détecte aussi bien que ferait l'aléatoire.
+
+
+Nous allons donc repartir sur le premier modèle et tenter de l'améliorer.
+En effet, nous remarquons que certaines variables ont une influence nulle sur notre modèle
+```{r echo=FALSE}
+importanceplot(bag_1,cex.names=0.5,horiz=TRUE)
+```
+
+Nous allons donc les supprimer du modèle et voir comment évoluent les performances
+```{r echo=FALSE}
+#On voit que les variables DiffDAteTr2,DiffDAteTr3,EcArtNumCheq,NbrMAgAsin3J,VerifiAnceCPT1,VerifiAnceCPT2
+#ont une influence nulle
+#on va donc les retirer du modele
+bag_3 = bagging(ytrain~D2CB+ScoringFP2+MontAnt+CA3TRetMtt+TAuxImpNB_CPM+VerifiAnceCPT3+ScoringFP1+CA3TR+TAuxImpNb_RB+ScoringFP3+DiffDAteTr1, data = Xytrain2)
+pred_bag3 = predict(bag_3, Xtest)
+cm_bag3 = confusionMatrix(as.factor(pred_bag3$class), as.factor(ytest), positive = "1", mode = "prec_recall")
+recall = cm_bag3$table[2,2]/(sum(cm_bag3$table[2,]))
+precision = cm_bag3$table[2,2]/(sum(cm_bag3$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, pred_bag3$class, plotit = FALSE)$auc
+roc.curve(ytest, pred_bag3$class) 
+#On a légérement une meilleur Fmesure et la même
+```
+La F-mesure étant de `r round(fmesure,4)` et l'AUC de `r round(auc,4)`, les performances n'ont pas été améliorées.  
+
+Nous allons donc tenter de combiner les deux premiers modèles. Pour cela, nous récupérons les votes de chaque arbres dans les deux modèles et nous attribuons la classe à l'aide d'un vote de majorité.
+```{r echo=FALSE}
+#pred_bag1
+#pred_bag2
+p0 = pred_bag1$votes[,1]+pred_bag2$votes[,1]
+p1 = pred_bag1$votes[,2]+pred_bag2$votes[,2]
+p = cbind(p0, p1)
+classe = c()
+for (i in 1:dim(p)[1]) {
+  classe[i] = ifelse(p[i,1]>p[i,2], 0, 1)
+}
+cm_bag_cl = confusionMatrix(as.factor(classe), as.factor(ytest), positive = "1", mode = "prec_recall")
+recall = cm_bag_cl$table[2,2]/(sum(cm_bag_cl$table[2,]))
+precision = cm_bag_cl$table[2,2]/(sum(cm_bag_cl$table[,2]))
+fmesure = 2*(precision*recall)/(precision+recall)
+auc = roc.curve(ytest, classe, plotit = FALSE)$auc
+roc.curve(ytest, classe)
+```
+
+Nous obtenons alors une F-mesure de `r round(fmesure,4)` se situant entre les 2 modèles et une AUC de `r round(auc,4)`.  
+Ce modèle semble donc être un bon compromis entre la F-mesure et l'AUC issu des deux premiers modèles. Cependant, nous concluons que la méthode de bagging ne donne pas de très bon résultats sur notre jeu de données. Nous allons donc tenter d'autres modèles.
+
+```{r}
+load(file = "D:/Téléchargements/M2/fouille de données/Xtrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/Xtest.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytest.Rdata")
+
+TX= cbind(Xtrain,ytrain)
+TXtrain = TX[ytrain==1,]
+ech = sort(sample(nrow(TX), 5000))
+p = TX[ech,]
+TXtrain = rbind(TXtrain,p)
+Tytrain = TXtrain$ytrain ; TXtrain = TXtrain[,-18]
+
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.01))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+Xtrain=Xtrain[ech,]
+ytrain = ytrain[ech]
+
+Xtest = Xtest[ech2,]
+ytest = ytest[ech2]
+
+Xytrain = cbind(Xtrain,ytrain)
+table(Xytrain$ytrain)
+```
+
+
+######################################################
+########################### SVM ######################
+######################################################
+
+Les SVMs sont une famille d’algorithmes d‘apprentissage automatique qui permettent de résoudre des problèmes tant de classification que de régression ou de détection d’anomalie. Ils ont pour but de séparer les données en classes à l’aide d’une frontière aussi « simple » que possible, de telle façon que la distance entre les différents groupes de données et la frontière qui les sépare soit maximale. Cette distance est aussi appelée « marge » et les SVMs sont ainsi qualifiés de « séparateurs à vaste marge », les « vecteurs de support » étant les données les plus proches de la frontière. 
+Nous utilisons le package ’e1071’ pour l’implémentation des SVM. Ce package nous permettra d'utiliser les SVM, de faire nos validations croisées et nos prédictions. On pourra y faire varier nos valeurs de Gamma et C. 
+
+
+On commence par une méthode d'échantillonage qui combine l'oversampling ainsi que l'undersampling via le package ROSE pour rééquilibrer la classe minoritaire à 50%
+On ne prendra que 20.000 données étant donné qu'il est compliqué de traiter énormément de données avec des SVM de part la matrice que cela crée
+
+```{r}
+Xytrain2 <- ovun.sample(ytrain ~ ., data = Xytrain, method = "both", p=0.5, seed=1)$data
+table(Xytrain2$ytrain)
+
+Xtrain2 = Xytrain2[,1:17]
+ytrain2 = Xytrain2[,18]
+```
+Nous utilisons le package ’e1071’ pour l’implémentation des SVM. Nous demandons à la procédure svm() de construire un classifieur dont on  centre les valeurs avec un noyau de type linéaire.
+
+On applique cette fonction à nos données d'apprentissage.
+
+
+```{r}
+model2 <- svm(Xtrain2, ytrain2, scale=T, type= "C-classification",kernel='linear')
+summary(model2)
+
+```
+
+```{r}
+#Prédiction sur les données test
+pred2 = predict(model2, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred2, ytest); cm
+#Taux d'erreur
+err2 = (cm[1,2] + cm[2,1])/sum(cm); err2
+
+roc.curve(ytest, pred2)
+```
+
+On observe un taux d’erreur de 19.9%, ce qui est globalement assez élevé.
+Cependant l’aire sous la courbe est de 67,2%, ce qui est assez correcte pour un premier modèle simple.
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred2, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+La F mesure est de 1.91%, cette mesure est faible, on pourrait essayer de l'améliorer en tunant le modèle.
+
+Avant cela, nous allons essayer une autre technique d'échantillonage qui dont la fonction s'appelle ROSE du package du même nom.
+
+Méthode ROSE du package :
+
+Les données générées par le suréchantillonnage ont prévu une quantité d'observations répétées. 
+Les données générées par le sous-échantillonnage sont privées d'informations importantes par rapport aux données d'origine. 
+
+Ce qui entraine des inexactitudes dans les performances résultantes. Pour faire face à ces problémes, ROSE nous aide à générer des données de manière synthétique également. 
+Les données générées par ROSE sont considérées comme fournissant une meilleure estimation des données originales.
+
+```{r}
+Xytrain3 <- ROSE(ytrain ~ ., data = Xytrain, seed = 1)$data
+table(Xytrain3$ytrain)
+```
+
+Cet ensemble nous fournit également des méthodes pour vérifier l'exactitude du modèle en utilisant la méthode de bagging et holdout.
+
+Cela nous permet de nous assurer que nos prévisions résultantes ne souffrent pas d'une variance élevée.
+
+```{r}
+ROSE.holdout <- ROSE.eval(ytrain ~ ., data = Xytrain3, learner = svm, method.assess = "holdout", extr.pred = function(obj)obj, seed = 1)
+ROSE.holdout
+```
+
+Nous constatons que notre précision se maintient à ~ 0,89 et montre que nos prévisions ne souffrent pas d'une variance élevée.
+
+
+```{r}
+Xtrain = Xytrain3[,1:17]
+ytrain = Xytrain3[,18]
+```
+
+
+
+On va donc retenter un SVM avec la méthode d'échantillonage ROSE, toujours avec un noyau linéaire et en centrant les données.
+```{r}
+##########Kernel linéaire
+model <- svm(Xtrain, ytrain, scale=T, type= "C-classification",kernel='linear')
+summary(model)
+```
+
+```{r}
+#Prédiction sur les données test
+pred = predict(model, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+On constate que le taux d’erreur est de 15.1%, ce qui est nettement meilleur que l’ancien modèle. Cependant l’aire sous la courbe est de 67.8%, ce qui est très similaire à l’ancien modèle.
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+On voit que la F mesure est de 2.35%, toujours meilleur que l’autre modèle. On peut donc conclure que cette méthode d’échantillonnage serait meilleure pour le SVM avec des données réduites.
+
+
+
+Nous allons tester un autre modèle de SVM simple mais cette fois avec les vraies données pour la classe minoritaire.
+Il y a environ 5000 données de classe minoritaire et 5000 de classe majoritaire.
+
+```{r}
+##########Kernel linéaire
+model <- svm(TXtrain, Tytrain, scale=T, type= "C-classification",kernel='linear')
+summary(model)
+```
+
+```{r}
+#Prédiction sur les données test
+pred = predict(model, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+On constate que le taux d’erreur est de 23.6%, le modèle avec l’échantillonnage de la méthode ROSE était bien meilleur pour cette mesure.
+Cependant l’aire sous la courbe est de 71.3%, légèrement meilleur que notre précédent modèle mais rien de significatif.
+
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+La F mesure est de 1.97%, en dessous de l’ancien modèle. On pourrait donc conclure que parmi ces différentes méthodes d’échantillonnage pour le SVM réalisé simplement, que celle de la méthode ROSE serait la plus efficace si on cherche à maximiser la F mesure.
+
+On va maintenant essayer de tuner le SVM pour essayer d'améliorer nos prédictions.
+
+Nous allons essayer d'ajuster notre modèle en tunant pour le moment deux hyperparamètres : C et Gamma.
+
+Pour rappel, l'hyperparamètre C est responsable de la taille de la marge du MVC. Cela signifie que les points situés à l'intérieur de cette marge ne sont classés dans aucune des deux catégories.  Plus la valeur de C est faible, plus la marge est importante
+
+L'hyperparamètre gamma doit être réglé pour mieux adapter l'hyperplan aux données.  Il est responsable du degré de linéarité de l'hyperplan, et pour cela, il n'est pas présent lors de l'utilisation de noyaux linéaires. Plus γ est petit, plus l'hyperplan aura l'air d'une ligne droite, tandis que si γ est trop grand, l'hyperplan sera plus courbé et pourrait trop bien délimiter les données, ce qui entraînerait un overfitting.
+
+
+```{r}
+#Optimisation de Gamma et C
+tuned = tune.svm(x=TXtrain,
+                 y=Tytrain, 
+                 scale=T, type = "C-classification", kernel='linear',
+                 cost = 10^(-1:2), 
+                 gamma = c(0.1, 1, 10),
+                 tunecontrol=tune.control(cross=5))
+tuned$performances
+```
+
+```{r}
+svmfit = tuned$best.model
+#Prédiction sur les données test
+pred = predict(svmfit, newdata = Xtest)
+#Matrice de confusion
+cm = table(pred, ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(ytest, pred)
+```
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+
+##########################################################################
+############## XGBOOST Gradient Boosting #################################
+##########################################################################
+
+
+Nous allons maintenant nous pencher sur une autre méthode, celle du Gradient Tree Boosting. Pour cela, nous utiliserons la librairie XGBoost.
+XGBoost fait partie de la famille des méthodes ensembliste. La différence par rapport aux méthodes classiques, c’est qu’au lieu d’entraîner le meilleur modèle possible sur les données, on va en entraîner des milliers sur des sous-parties diverses du jeu de données d’apprentissage, puis les faire voter pour prendre notre décision.
+Le principe du boosting est d’améliorer la qualité de prédiction d’un modèle médiocre (weak learner) en donnant de plus en plus de poids aux valeurs difficiles à prédire au cours de l’apprentissage. Ainsi, on oblige le modèle à s’améliorer.
+
+
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+load(file = "D:/Téléchargements/M2/fouille de données/Xtrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytrain.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/Xtest.Rdata")
+load(file = "D:/Téléchargements/M2/fouille de données/ytest.Rdata")
+
+TX= cbind(Xtrain,ytrain)
+TXtrain = TX[ytrain==1,]
+ech = sort(sample(nrow(TX), 5000))
+p = TX[ech,]
+TXtrain = rbind(TXtrain,p)
+Tytrain = TXtrain$ytrain ; TXtrain = TXtrain[,-18]
+Txy=cbind(TXtrain,Tytrain)
+
+rm(ech,p,TXtrain,Tytrain,TX)
+
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.25))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+XYtrain=cbind(Xtrain[ech,],ytrain[ech])
+colnames(XYtrain)[18] = "ytrain"
+
+XYtest = cbind(Xtest[ech2,], ytest[ech2])
+colnames(XYtest)[18] = "ytest"
+
+table(XYtrain$ytrain)
+
+rm(ech,ech2)
+```
+
+Pour notre premier modèle, nous utiliserons cette fois les vraies données pour la classe minoritaire. Il y a environ 5000 données de classe minoritaire et 5000 de classe majoritaire.
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(Txy %>% select(-Tytrain)))
+xgb_ytrain = Txy$Tytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+On va donc commencer par définir un objet trainControl, qui permet de contrôler la manière dont se fait l’entraînement du modèle, assuré par la fonction train().
+
+Ici, nous choisissons une validation croisée (method = ‘cv’) à 2 folds (number = 2). On choisit également d’autoriser la parallélisation des calculs (allowParallel = TRUE), de réduire la verbosité (verboseIter = FALSE).
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+On définit ensuite une grille de paramètres du modèle XGBoost appelée xgbGrid
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+nrounds: nombre d’itérations de boosting à effectuer. Plus il est grand, et plus c’est lent
+
+max_depth: profondeur d’arbre maximale. Risque d’over-fit si trop grand, et d’under-fit si trop petit
+
+colsample_bytree: pourcentage des colonnes pris pour construire un arbre
+
+eta: ou learning rate, ce paramètre contrôle la vitesse à laquelle on convergence lors de la descente du gradient fonctionnelle (par défaut = 0.3)
+
+gamma: diminution minimale de la valeur de la loss pour prendre la décision de partitionner une feuille
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+
+On obtient un taux d’erreur de 24% et un AUC de 71.3%. La F mesure est de 1.83%. Ce modèle avec ce type de données ne donne pas de bons résultats, il faudrait essayer avec plus de données couple à de l’oversampling et/ou de l’undersampling.
+Nous allons maintenant tester un nouveau modèle mais cette fois avec 500.000 données. Nous rééquilibrerons nos données avec une méthode d’oversampling et undersampling combiné pour un ratio de 50/50. Nous gardons les mêmes paramètres que l’ancien modèle pour tester un maximum de valeurs pour les différents hyperparamètres.
+
+
+```{r}
+XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.5, seed=1)$data
+table(XYtrain$ytrain)
+```
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(XYtrain %>% select(-ytrain)))
+xgb_ytrain = XYtrain$ytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+On obtient un taux d’erreur de 0.03% mais un AUC de 53.8%.  L’AUC est très mauvais pour notre modèle, cependant la F mesure est excellente. Dans notre cas, puisqu’on cherche à maximiser la F mesure, on pourrait commencer à retenir ce modèle pour traiter notre problème de fraude.
+
+On va essayer un autre modèle, toujours avec la même plage de valeur pour les hyperparamètres, et le même nombre de données, mais cette fois-ci, nous ferons un ratio de 75% de classe majoritaire et 25% de classe minoritaire.
+
+
+```{r}
+ech = sort(sample(nrow(Xtrain), nrow(Xtrain)*.25))
+ech2 = sort(sample(nrow(Xtest), nrow(Xtest)*.1))
+XYtrain=cbind(Xtrain[ech,],ytrain[ech])
+colnames(XYtrain)[18] = "ytrain"
+```
+
+
+```{r}
+XYtrain <- ovun.sample(ytrain ~ ., data = XYtrain, method = "both", p=0.25, seed=1)$data
+table(XYtrain$ytrain)
+```
+
+
+```{r}
+xgb_Xtrain = xgb.DMatrix(as.matrix(XYtrain %>% select(-ytrain)))
+xgb_ytrain = XYtrain$ytrain
+
+#Recode en char car XGboost ne prend pas 0 et 1 en binaire
+xgb_ytrain = recode(xgb_ytrain, "0"="A", "1"="B")
+
+xgb_Xtest = xgb.DMatrix(as.matrix(XYtest %>% select(-ytest)))
+xgb_ytest = XYtest$ytest
+```
+
+```{r}
+xgb_trcontrol = trainControl(method = "cv", number = 2, allowParallel = TRUE, 
+    verboseIter = FALSE, returnData = FALSE, summaryFunction = twoClassSummary,classProbs = TRUE)
+```
+
+
+```{r}
+xgbGrid <- expand.grid(nrounds = c(100,200),  
+                       max_depth = c(3, 5, 10, 15, 20),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+```{r}
+xgbGrid <- expand.grid(nrounds = 200,  
+                       max_depth = 20,
+                       colsample_bytree = 0.5,
+                       ## valeurs par défaut : 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+```
+
+```{r}
+xgb_model = train(xgb_Xtrain, xgb_ytrain, trControl = xgb_trcontrol, tuneGrid = xgbGrid, 
+    method = "xgbTree",metric = "ROC")
+```
+
+```{r}
+xgb_model$bestTune
+```
+
+```{r}
+pred = predict(xgb_model, xgb_Xtest)
+pred = recode(pred, "A"=0,"B"=1)
+pred=as.factor(pred)
+#Matrice de confusion
+cm = table(pred, xgb_ytest); cm
+#Taux d'erreur
+err = (cm[1,2] + cm[2,1])/sum(cm); err
+
+roc.curve(xgb_ytest, pred)
+```
+
+
+```{r}
+#F mesure
+cf <- confusionMatrix(pred, xgb_ytest, mode = "prec_recall", positive = '1')$byClass[7]
+print(round(cf*100,2))
+```
+
+Le taux d’erreur est de 0.03%. L’AUC est de 50.6% tandis que la F mesure est de 2.27%.  Ce modèle n’est vraiment pas bon par rapport à l’ancien dans notre recherche de maximisation de la F mesure.
+
+Concernant le Gradient Tree Boosting, on pourrait retenir ce modèle pour répondre à notre problème vu qu’il produit de bon résultat. Il faudrait lui faire apprendre un maximum de données d’apprentissage tout en équilibrant parfaitement les deux classes. On pensait déjà avoir de bons résultats avec cette méthode car XGBoost a une excellente précision et s’adapte bien à tous types de données et de problématiques, ce qui en fait l’algorithme idéal quand la performance et la rapidité priment.
+
